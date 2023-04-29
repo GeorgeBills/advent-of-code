@@ -1,56 +1,49 @@
-﻿const int numItemTypes = 52; // a..z (26) + A..Z (26)
+﻿const int rucksacksPerTeam = 3;
 
-Func<char, int> itemTypeToPriority = ch => ch switch
+const int minItemTypePriority = 1;
+const int maxItemTypePriority = 52;
+
+var getPriority = (char itemType) => itemType switch
 {
     // "Lowercase item types a through z have priorities 1 through 26"
-    >= 'a' and <= 'z' => (int)ch - (int)'a' + 1,
+    >= 'a' and <= 'z' => (int)itemType - (int)'a' + 1,
     // "Uppercase item types A through Z have priorities 27 through 52"
-    >= 'A' and <= 'Z' => (int)ch - (int)'A' + 27,
-    _ => throw new ArgumentException($"{ch} unhandled"),
+    >= 'A' and <= 'Z' => (int)itemType - (int)'A' + 27,
+    _ => throw new ArgumentException($"{itemType} unhandled"),
 };
 
-Func<int, char> priorityToItemType = n => n switch
+var getItemType = (int priority) => priority switch
 {
-    >= 1 and <= 26 => (char)(n - 1 + (int)'a'),
-    >= 27 and <= 52 => (char)(n - 27 + (int)'A'),
-    _ => throw new ArgumentException($"{n} unhandled"),
+    >= 1 and <= 26 => (char)(priority + (int)'a' - 1),
+    >= 27 and <= 52 => (char)(priority + (int)'A' - 27),
+    _ => throw new ArgumentException($"{priority} unhandled"),
 };
 
-Func<string, int[]> getItemTypeCount = str =>
+var getPriorityBit = (int priority) => 1ul << priority - 1;
+
+var getItemTypePresence = (string rucksack) =>
+    rucksack.ToCharArray()
+        .Select(itemType => getPriority(itemType))
+        .Select(priority => getPriorityBit(priority))
+        .Aggregate(0ul, (presence, priorityBit) => presence | priorityBit);
+
+var getFirstCommonItemType = (ulong[] itemTypePresence) =>
+    Enumerable.Range(minItemTypePriority, maxItemTypePriority)
+        .Select(priority => (priority, priorityBit: getPriorityBit(priority)))
+        .First(ppb => itemTypePresence.All(presence => (presence & ppb.priorityBit) != 0))
+        .priority;
+
+var rucksacks = File.ReadLines(args[0]);
+
+if (rucksacks.Count() % rucksacksPerTeam != 0)
 {
-    // take advantage of the fact that the priorities are all unique...
-    // we could use an int64 and set bits given that we don't care about the count
-    int[] itemTypePriorityCounts = new int[numItemTypes];
-    foreach (char itemType in str)
-    {
-        int priority = itemTypeToPriority(itemType);
-        itemTypePriorityCounts[priority - 1]++;
-    }
-    return itemTypePriorityCounts;
-};
+    throw new Exception($"require {rucksacksPerTeam} rucksacks per team");
+}
 
-Func<string, string, (char itemType, int priority)?> getFirstCommonItemType = (c1Items, c2Items) =>
-{
-    int[] c1ItemTypes = getItemTypeCount(c1Items);
-    int[] c2ItemTypes = getItemTypeCount(c2Items);
-    for (int i = 0; i < numItemTypes; i++)
-    {
-        if (c1ItemTypes[i] > 0 && c2ItemTypes[i] > 0)
-        {
-            int priority = i + 1;
-            char itemType = priorityToItemType(priority);
-            return (itemType, priority);
-        }
-    }
-    return null;
-};
+int answer = rucksacks
+    .Select(rs => getItemTypePresence(rs))          // check which item types are in each rucksack
+    .Chunk(rucksacksPerTeam)                        // group rucksacks by team
+    .Select(chunk => getFirstCommonItemType(chunk)) // priority of first common item type for each team
+    .Sum();
 
-var rucksacks = File.ReadLines(args[0])
-        .Select(line => { int mid = line.Length / 2; return (line[..mid], line[mid..]); })
-        .Select(parsed => getFirstCommonItemType(parsed.Item1, parsed.Item2))
-        .Sum(pnc => pnc.HasValue ? pnc.Value.priority : 0);
-// .Select(parsed => (getItemTypePriorityCount(parsed.Item1), getItemTypePriorityCount(parsed.Item2)));
-
-Console.WriteLine(string.Join(Environment.NewLine, rucksacks));
-
-public readonly record struct Rucksack(char[] Compartment1, char[] Compartment2);
+Console.WriteLine(answer);
