@@ -56,12 +56,30 @@ foreach (var o in output.Skip(1))
 Console.Write(root.ToString());
 Console.WriteLine();
 
-const int maxSize = 100_000;
+// part one
+// const int maxSize = 100_000;
+// int answer = root.Flatten().Select(dn => dn.TotalSize()).Where(sz => sz <= maxSize).Sum();
 
-int answer = root.Flatten().Select(dn => dn.TotalSize()).Where(sz => sz <= maxSize).Sum();
-Console.WriteLine(answer);
+const int total = 70000000;
+const int required = 30000000;
 
+int used = root.TotalSize();
+int unused = total - used;
+int free = required - unused;
 
+Console.WriteLine(new { used, unused, free });
+
+var delete = root.Flatten()
+    .Select(dn => new { dir = dn, size = dn.TotalSize() })
+    .Where(ds => ds.size > free) // dirs we can delete to free up enough space
+    .MinBy(ds => ds.size);       // the smallest one
+
+if (delete == null)
+{
+    throw new Exception("no dir to delete found");
+}
+
+Console.WriteLine($"delete {delete.dir.Name} with size {delete.size}");
 
 interface ITerminalOutput
 {
