@@ -1,15 +1,17 @@
 ﻿using System.Text.RegularExpressions;
 
+var part = Part.Two;
+
 var stepRegex = new Regex(@"^move (\d+) from (\d+) to (\d+)$");
 
 var parseDiagram = (string[] lines) =>
 {
-    var stacks = new List<Stack<char>>();
+    var stacks = new List<List<char>>();
 
     char[][] diagram = lines.Select(line => line.ToCharArray()).ToArray();
 
     int height = diagram.Length;
-    int width = diagram[0].Length; // rely on all lines being the same length
+    int width = diagram.Select(row => row.Length).Distinct().Single();
 
     /*************
      *    [D]    *
@@ -20,7 +22,7 @@ var parseDiagram = (string[] lines) =>
 
     for (int x = 1; x < width; x += 4)
     {
-        var crates = new Stack<char>();
+        var crates = new List<char>();
 
         for (int y = height - 2; y >= 0; y--)
         {
@@ -30,7 +32,7 @@ var parseDiagram = (string[] lines) =>
                 break;
             }
             // Console.WriteLine(new { x, y, crate });
-            crates.Push(crate);
+            crates.Add(crate);
         }
 
         stacks.Add(crates);
@@ -39,7 +41,7 @@ var parseDiagram = (string[] lines) =>
     return stacks.ToArray();
 };
 
-var printCrates = (Stack<char>[] crates) =>
+var printCrates = (List<char>[] crates) =>
 {
     for (int i = 0; i < crates.Length; i++)
     {
@@ -62,22 +64,51 @@ Console.WriteLine();
 
 var steps = parseSteps(lines[(splitidx + 1)..]);
 
+var applyStepCrateMover9000 = (Step step, List<char>[] crates) =>
+{
+    // stack semantics
+    for (int i = 0; i < step.move; i++)
+    {
+        var fromStack = crates[step.from - 1];
+        var toStack = crates[step.to - 1];
+
+        char crate = fromStack.Last();
+        fromStack.RemoveAt(fromStack.Count() - 1);
+        toStack.Add(crate);
+    }
+};
+
+var applyStepCrateMover9001 = (Step step, List<char>[] crates) =>
+{
+    // "range semantics"?
+    var fromStack = crates[step.from - 1];
+    var toStack = crates[step.to - 1];
+
+    var moveCrates = fromStack.GetRange(fromStack.Count() - step.move, step.move);
+    fromStack.RemoveRange(fromStack.Count() - step.move, step.move);
+    toStack.AddRange(moveCrates);
+};
+
+var applyStep = part switch
+{
+    Part.One => applyStepCrateMover9000,
+    Part.Two => applyStepCrateMover9001,
+    _ => throw new NotImplementedException($"{part} not implemeneted"),
+};
+
 foreach (var step in steps)
 {
     Console.WriteLine($"move {step.move} from {step.from} to {step.to}");
-    int stackidx = step.from - 1;
-    int toidx = step.to - 1;
-    for (int i = 0; i < step.move; i++)
-    {
-        char crate = crates[stackidx].Pop();
-        crates[toidx].Push(crate);
-    }
+
+    applyStep(step, crates);
 
     printCrates(crates);
     Console.WriteLine();
 }
 
-char[] topCrates = crates.Select(stack => stack.Peek()).ToArray();
+char[] topCrates = crates.Select(stack => stack[^1]).ToArray();
 Console.WriteLine(topCrates);
 
 record Step(int move, int from, int to);
+
+enum Part { One, Two };
