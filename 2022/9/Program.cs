@@ -11,15 +11,14 @@ var motions = File.ReadLines(args[0])
         )
     );
 
-var rope = new Rope(Head: new Position(0, 0), Tail: new Position(0, 0));
-var tailVisits = new HashSet<Position>();
+var rope = new Rope();
 
 foreach (var motion in motions)
 {
-    rope = rope.Move(motion, tailVisits);
+    rope.Move(motion);
 }
 
-Console.WriteLine($"rope is at {rope}, tail visited {tailVisits.Count()} positions");
+Console.WriteLine($"rope is at {rope.HeadPosition()}, tail visited {rope.NumTailVisits()} positions");
 
 Direction parseDirection(string s) => s switch
 {
@@ -53,45 +52,120 @@ readonly record struct Position(int X, int Y)
     public Vector VectorTo(Position other) => new Vector(other.X - this.X, other.Y - this.Y);
 }
 
-readonly record struct Rope(Position Head, Position Tail)
+class Rope
 {
-    public Rope Move(Motion motion, ISet<Position> tailVisits)
+    public const int NumKnots = 10; // "consisting of ten knots"
+
+    private Position[] Knots { get; init; }
+    private ISet<Position> TailVisits { get; init; }
+
+    public Rope()
     {
-        var head = this.Head;
-        var tail = this.Tail;
+        this.Knots = new Position[NumKnots];
+        this.TailVisits = new HashSet<Position>();
+    }
+
+    public int NumTailVisits() => TailVisits.Count();
+
+    public Position HeadPosition() => Knots[0];
+
+    public void Move(Motion motion)
+    {
+        // Console.WriteLine($"== {motion.Direction} {motion.Steps} ==");
+
         for (int i = 0; i < motion.Steps; i++)
         {
-            head = head.Moved(motion.Direction);
-            var vector = tail.VectorTo(head);
-            tail = vector switch
+            // "One knot is still the head of the rope and moves according to
+            // the series of motions."
+            Knots[0] = Knots[0].Moved(motion.Direction);
+
+            // "Each knot further down the rope follows the knot in front of it
+            // using the same rules as before."
+            for (int j = 1; j < Knots.Length; j++)
             {
-                // "If the head is ever two steps directly up, down, left, or
-                // right from the tail, the tail must also move one step in that
-                // direction so it remains close enough."
-                { X: +2, Y: 0 } => tail.Moved(Direction.Right),
-                { X: 0, Y: +2 } => tail.Moved(Direction.Up),
-                { X: -2, Y: 0 } => tail.Moved(Direction.Left),
-                { X: 0, Y: -2 } => tail.Moved(Direction.Down),
+                var vector = Knots[j].VectorTo(Knots[j - 1]);
+                Knots[j] = vector switch
+                {
+                    // "If the head is ever two steps directly up, down, left, or
+                    // right from the tail, the tail must also move one step in that
+                    // direction so it remains close enough."
+                    { X: +2, Y: 0 } => Knots[j].Moved(Direction.Right),
+                    { X: 0, Y: +2 } => Knots[j].Moved(Direction.Up),
+                    { X: -2, Y: 0 } => Knots[j].Moved(Direction.Left),
+                    { X: 0, Y: -2 } => Knots[j].Moved(Direction.Down),
 
-                // "Otherwise, if the head and tail aren't touching and aren't
-                // in the same row or column, the tail always moves one step
-                // diagonally to keep up."
-                { X: +2, Y: +1 } => tail.Moved(Direction.Right).Moved(Direction.Up),
-                { X: +2, Y: -1 } => tail.Moved(Direction.Right).Moved(Direction.Down),
-                { X: +1, Y: +2 } => tail.Moved(Direction.Right).Moved(Direction.Up),
-                { X: +1, Y: -2 } => tail.Moved(Direction.Right).Moved(Direction.Down),
-                { X: -2, Y: +1 } => tail.Moved(Direction.Left).Moved(Direction.Up),
-                { X: -2, Y: -1 } => tail.Moved(Direction.Left).Moved(Direction.Down),
-                { X: -1, Y: +2 } => tail.Moved(Direction.Left).Moved(Direction.Up),
-                { X: -1, Y: -2 } => tail.Moved(Direction.Left).Moved(Direction.Down),
+                    // "Otherwise, if the head and tail aren't touching and aren't
+                    // in the same row or column, the tail always moves one step
+                    // diagonally to keep up."
+                    { X: +2, Y: +1 } => Knots[j].Moved(Direction.Right).Moved(Direction.Up),
+                    { X: +2, Y: -1 } => Knots[j].Moved(Direction.Right).Moved(Direction.Down),
+                    { X: +1, Y: +2 } => Knots[j].Moved(Direction.Right).Moved(Direction.Up),
+                    { X: +1, Y: -2 } => Knots[j].Moved(Direction.Right).Moved(Direction.Down),
+                    { X: -2, Y: +1 } => Knots[j].Moved(Direction.Left).Moved(Direction.Up),
+                    { X: -2, Y: -1 } => Knots[j].Moved(Direction.Left).Moved(Direction.Down),
+                    { X: -1, Y: +2 } => Knots[j].Moved(Direction.Left).Moved(Direction.Up),
+                    { X: -1, Y: -2 } => Knots[j].Moved(Direction.Left).Moved(Direction.Down),
 
-                // touching
-                { X: >= -1 and <= 1, Y: >= -1 and <= 1 } => tail,
+                    { X: +2, Y: +2 } => Knots[j].Moved(Direction.Right).Moved(Direction.Up),
+                    { X: +2, Y: -2 } => Knots[j].Moved(Direction.Right).Moved(Direction.Down),
+                    { X: -2, Y: +2 } => Knots[j].Moved(Direction.Left).Moved(Direction.Up),
+                    { X: -2, Y: -2 } => Knots[j].Moved(Direction.Left).Moved(Direction.Down),
 
-                _ => throw new Exception($"unhandled vector: {vector}"),
-            };
-            tailVisits.Add(tail);
+                    // touching
+                    { X: >= -1 and <= 1, Y: >= -1 and <= 1 } => Knots[j],
+
+                    _ => throw new Exception($"unhandled vector {vector} between knot {KnotToChar(j)} @ {Knots[j]} and knot {KnotToChar(j - 1)} @ {Knots[j - 1]}"),
+                };
+            }
+
+            // Plot(new Position(6, 6));
+            // Console.WriteLine();
+
+            TailVisits.Add(Knots[^1]);
         }
-        return new Rope(head, tail);
+    }
+
+    private char KnotToChar(int n) => n switch
+    {
+        0 => 'H',
+        >= 1 and <= 9 => (char)('0' + n),
+        _ => throw new Exception($"unsupported knot n: {n}"),
+    };
+
+    public void Plot(Position max)
+    {
+        const char emptyChar = '.';
+
+        var grid = new char[max.X, max.Y];
+
+        // populate background
+        for (int i = 0; i < max.X; i++)
+        {
+            for (int j = 0; j < max.Y; j++)
+            {
+                grid[i, j] = emptyChar;
+            }
+        }
+
+        // populate rope
+        for (int i = 0; i < Knots.Length; i++)
+        {
+            var knot = Knots[i];
+
+            if (grid[knot.Y, knot.X] == emptyChar)
+            {
+                grid[knot.Y, knot.X] = KnotToChar(i);
+            }
+        }
+
+        // print grid
+        for (int i = max.X - 1; i >= 0; i--)
+        {
+            for (int j = 0; j < max.Y; j++)
+            {
+                Console.Write(grid[i, j]);
+            }
+            Console.WriteLine();
+        }
     }
 }
