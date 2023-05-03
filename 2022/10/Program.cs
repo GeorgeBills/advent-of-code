@@ -45,24 +45,28 @@ foreach (var line in File.ReadLines(args[0]))
     }
 }
 
-Console.WriteLine($"parsed {codeidx} bytes into array of length {code.Length}");
-
 code = code[..codeidx];
 
 /***********
  * EXECUTE *
  ***********/
 
+const int rowWidth = 40;
+const char litPixel = '#';
+const char darkPixel = '.';
+
 int x = 1; // "The CPU has a single register, X, which starts with the value 1."
-int sum = 0;
 var state = Expecting.Instruction;
 for (int cycle = 1; cycle <= code.Length; cycle++)
 {
-    if ((cycle - 20) % 40 == 0)
+    int rowX = (cycle - 1) % rowWidth;
+    if (rowX == x - 1 || rowX == x || rowX == x + 1)
     {
-        int strength = cycle * x;
-        sum += strength;
-        Console.WriteLine($"{cycle}: x = {x}; strength = {strength}");
+        Console.Write(litPixel);
+    }
+    else
+    {
+        Console.Write(darkPixel);
     }
 
     byte b = code[cycle - 1];
@@ -86,9 +90,12 @@ for (int cycle = 1; cycle <= code.Length; cycle++)
             state = Expecting.Instruction;
             break;
     }
-}
 
-Console.WriteLine(sum);
+    if (cycle % 40 == 0)
+    {
+        Console.WriteLine();
+    }
+}
 
 string ByteToString(byte b) => "0b" + Convert.ToString(b, 2).PadLeft(8, '0');
 
