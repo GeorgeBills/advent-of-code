@@ -1,8 +1,37 @@
 ﻿var lines = File.ReadAllLines(args.Length >= 1 ? args[0] : "eg.txt");
 (char[,] grid, Dimensions dimensions, Point start, Point end) = ParseGrid(lines);
+
+#if DEBUG
 PrintGrid(grid, dimensions);
+#endif
+
 (var path, int distance) = Search(dimensions, start, end);
-Console.WriteLine($"shortest path distance is {distance}");
+Console.WriteLine($"shortest path distance to {end} from S ({start}) is {distance}");
+
+// get all candidates
+const char wantElevation = 'a';
+var candidates = GetPointsWithElevation(grid, dimensions)
+    .Where(pwe => pwe.elevation == wantElevation)
+    .Select(pwe => pwe.point)
+    .Append(start);
+
+Console.WriteLine($"searching {candidates.Count()} total squares...");
+
+// brute force search from all the candidates
+// breadth-first-search from the end back to any candidate would be much faster...
+var winner = candidates
+    .Select(point =>
+        {
+            (var path, int distance) = Search(dimensions, point, end);
+            return new { start = point, path, distance };
+        }
+    )
+    .MinBy(c => c.distance);
+
+if (winner != null)
+{
+    Console.WriteLine($"shortest path distance to {end} from any '{wantElevation}' is from {winner.start} with distance {winner.distance}");
+}
 
 (char[,] grid, Dimensions dimensions, Point start, Point end) ParseGrid(string[] lines)
 {
@@ -48,6 +77,21 @@ void PrintGrid(char[,] grid, Dimensions dimensions)
     }
 }
 
+IEnumerable<(Point point, char elevation)> GetPointsWithElevation(char[,] grid, Dimensions dimensions)
+{
+    (int height, int width) = dimensions;
+
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            Point point = new Point(x, y);
+            char elevation = grid[x, y];
+            yield return (point, elevation);
+        }
+    }
+}
+
 (IEnumerable<Point> path, int distance) Search(Dimensions dimensions, Point start, Point end)
 {
     (int height, int width) = dimensions;
@@ -56,7 +100,7 @@ void PrintGrid(char[,] grid, Dimensions dimensions)
     var startNode = new Node(start, Previous: null, TotalDistance: 0);
     frontier.Enqueue(startNode, start.ManhattanDistance(end));
 
-    var seen = new HashSet<Point>();
+    var seen = new Dictionary<Point, int>();
 
     while (frontier.Count > 0)
     {
@@ -79,11 +123,6 @@ void PrintGrid(char[,] grid, Dimensions dimensions)
 
         foreach (var neighbour in neighbours)
         {
-            if (seen.Contains(neighbour))
-            {
-                continue; // already seen this node
-            }
-
             bool valid =
                 0 <= neighbour.X && neighbour.X < width &&
                 0 <= neighbour.Y && neighbour.Y < height;
@@ -102,15 +141,22 @@ void PrintGrid(char[,] grid, Dimensions dimensions)
             }
 
             int distanceToNeighbour = currentNode.TotalDistance + 1;
+
+            if (seen.TryGetValue(neighbour, out int seenDistance) && seenDistance <= distanceToNeighbour)
+            {
+                // already seen a shorter or equally short path to this node
+                continue;
+            }
+
+            seen[neighbour] = distanceToNeighbour;
+
             var neighbourNode = new Node(neighbour, Previous: currentNode, distanceToNeighbour);
             int estimatedTotalDistance = distanceToNeighbour + neighbour.ManhattanDistance(end);
             frontier.Enqueue(neighbourNode, estimatedTotalDistance);
-
-            seen.Add(neighbour);
         }
     }
 
-    throw new Exception($"no path to {end} from {start}!");
+    return (Enumerable.Empty<Point>(), int.MaxValue); // no path found
 
     IEnumerable<Point> RebuildPathBackToStart(Node current)
     {
