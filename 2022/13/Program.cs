@@ -14,7 +14,7 @@ foreach (var packetPair in packetPairs)
     Console.WriteLine();
 }
 
-int answer = packetPairs
+int answer1 = packetPairs
     .Select(
         (pair, index) =>
         {
@@ -27,7 +27,22 @@ int answer = packetPairs
     .Select(pio => pio.index + 1)
     .Sum();
 
-Console.WriteLine(answer);
+Console.WriteLine($"part 1: {answer1}");
+
+var divider1 = new PacketList(new PacketList(new PacketInt(2))); // [[2]]
+var divider2 = new PacketList(new PacketList(new PacketInt(6))); // [[6]]
+
+var orderedPackets = packetPairs
+    .SelectMany(pair => new Packet[] { pair.Item1, pair.Item2 })
+    .Append(divider1)
+    .Append(divider2)
+    .Order()
+    .ToList();
+
+int index1 = orderedPackets.FindIndex(packet => packet == divider1) + 1;
+int index2 = orderedPackets.FindIndex(packet => packet == divider2) + 1;
+
+Console.WriteLine($"part 2: index of divider 1: {index1}; index of divider 2: {index2}; answer: {index1 * index2}");
 
 static class Parse
 {
