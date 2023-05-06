@@ -3,13 +3,16 @@
 var packetPairs = File.ReadLines(file)
     .Chunk(3)
     .Select(chunk => chunk.Take(2))
-    .Select(chunk => chunk
-        .Select(str => new StringReader(str))
-        .Select(r => ParsePacketList(r))
-    )
+    .Select(chunk => chunk.Select(r => Parse.PacketList(r)))
     .Select(chunk => (chunk.First(), chunk.Last()));
 
-Console.WriteLine(String.Join(Environment.NewLine, packetPairs));
+foreach (var packetPair in packetPairs)
+{
+    (var left, var right) = packetPair;
+    Console.WriteLine(left);
+    Console.WriteLine(right);
+    Console.WriteLine();
+}
 
 int answer = packetPairs
     .Select(
@@ -26,55 +29,64 @@ int answer = packetPairs
 
 Console.WriteLine(answer);
 
-PacketList ParsePacketList(TextReader reader)
+static class Parse
 {
-    if ((char)reader.Read() != '[')
+    public static PacketList PacketList(string str) => PacketList(new StringReader(str));
+
+    public static PacketList PacketList(TextReader reader)
     {
-        throw new Exception("expected '['");
-    }
-
-    var packets = new List<Packet>();
-
-    char c = (char)reader.Peek();
-    while (c != ']')
-    {
-        Packet packet = c switch
+        if ((char)reader.Read() != '[')
         {
-            '[' => ParsePacketList(reader),
-            >= '0' and <= '9' => ParsePacketInt(reader),
-            _ => throw new Exception($"unexpected '{c}'"),
-        };
+            throw new Exception("expected '['");
+        }
 
-        packets.Add(packet);
+        var packets = new List<Packet>();
 
-        c = (char)reader.Read();
-        if (c == ',')
+        char c = (char)reader.Peek();
+        while (c != ']')
         {
+            Packet packet = c switch
+            {
+                '[' => Parse.PacketList(reader),              // consume e.g. [1,2,3]
+                >= '0' and <= '9' => Parse.PacketInt(reader), // consume e.g. 123
+                _ => throw new Exception($"unexpected '{c}'"),
+            };
+
+            packets.Add(packet);
+
+            // expecting either ',' or ']'
             c = (char)reader.Peek();
+
+            if (c == ',')
+            {
+                reader.Read();           // consume ','
+                c = (char)reader.Peek(); // peek next
+            }
         }
+        reader.Read(); // consume trailing ']'
+
+        return new PacketList(packets.ToArray());
     }
 
-    return new PacketList(packets.ToArray());
-}
-
-PacketInt ParsePacketInt(TextReader reader)
-{
-    if (!char.IsAsciiDigit((char)reader.Peek()))
+    public static PacketInt PacketInt(TextReader reader)
     {
-        throw new Exception("expected digit");
-    }
-
-    int n = 0;
-    while (char.IsAsciiDigit((char)reader.Peek()))
-    {
-        int digit = (char)reader.Read() - '0';
-        checked
+        if (!char.IsAsciiDigit((char)reader.Peek()))
         {
-            n = 10 * n + digit;
+            throw new Exception("expected digit");
         }
-    }
 
-    return new PacketInt(n);
+        int n = 0;
+        while (char.IsAsciiDigit((char)reader.Peek()))
+        {
+            int digit = (char)reader.Read() - '0';
+            checked
+            {
+                n = 10 * n + digit;
+            }
+        }
+
+        return new PacketInt(n);
+    }
 }
 
 abstract record Packet() : IComparable<Packet>
@@ -108,10 +120,8 @@ record PacketInt(int N) : Packet, IComparable<PacketInt>
     public int CompareTo(PacketInt? other) => other != null ? N.CompareTo(other.N) : 1;
 }
 
-record PacketList(Packet[] List) : Packet, IComparable<PacketList>
+record PacketList(params Packet[] List) : Packet, IComparable<PacketList>
 {
-    public PacketList(Packet packet) : this(new Packet[] { packet }) { }
-
     public override string ToString() => "[" + String.Join(',', (IEnumerable<Packet>)List) + "]";
 
     public int Length { get => List.Length; }
