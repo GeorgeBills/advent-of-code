@@ -9,11 +9,15 @@ var sandSource = new Point(500, 0);
 
 var (min, max) = GetDimensions(occupiedRock, sandSource);
 
+// "...assume the floor is an infinite horizontal line with a y coordinate equal
+// to two plus the highest y coordinate of any point in your scan."
+int floorY = max.Y + 2;
+
 var occupiedSand = new HashSet<Point>();
 
 #if DEBUG
 Console.WriteLine("before simulation:");
-PrintDiagram(min, max, occupiedRock, occupiedSand, sandSource);
+PrintDiagram(min, max, floorY, occupiedRock, occupiedSand, sandSource);
 #endif
 
 int tick;
@@ -22,6 +26,13 @@ for (tick = 0; ; tick++)
 {
     if (sand == null)
     {
+        if (IsOccupied(sandSource, occupiedRock, occupiedSand))
+        {
+            // "...simulate the falling sand until the source of the sand
+            // becomes blocked."
+            break;
+        }
+
         sand = sandSource;
     }
 
@@ -33,21 +44,21 @@ for (tick = 0; ; tick++)
     var downRight = Next((Point)sand, Direction.DownRight);
 
     // "A unit of sand always falls down one step if possible."
-    if (!IsOccupied(down, occupiedRock, occupiedSand))
+    if (!IsBlocked(down, floorY, occupiedRock, occupiedSand))
     {
         sand = down;
     }
 
     // "If the tile immediately below is blocked (by rock or sand), the unit of
     // sand attempts to instead move diagonally one step down and to the left."
-    else if (!IsOccupied(downLeft, occupiedRock, occupiedSand))
+    else if (!IsBlocked(downLeft, floorY, occupiedRock, occupiedSand))
     {
         sand = downLeft;
     }
 
     // "If that tile is blocked, the unit of sand attempts to instead move
     // diagonally one step down and to the right."
-    else if (!IsOccupied(downRight, occupiedRock, occupiedSand))
+    else if (!IsBlocked(downRight, floorY, occupiedRock, occupiedSand))
     {
         sand = downRight;
     }
@@ -60,20 +71,11 @@ for (tick = 0; ; tick++)
         occupiedSand.Add((Point)sand);
         sand = null;
     }
-
-    // "...sand flows out the bottom, falling into the endless void"
-    //
-    // Once we've started overflowing, no more sand will ever come to rest so we
-    // end the simulation.
-    if (sand?.Y > max.Y)
-    {
-        break;
-    }
 }
 
 #if DEBUG
 Console.WriteLine($"after simulation ({tick + 1} ticks processed)");
-PrintDiagram(min, max, occupiedRock, occupiedSand, sandSource);
+PrintDiagram(min, max, floorY, occupiedRock, occupiedSand, sandSource);
 #endif
 
 Console.WriteLine($"{occupiedSand.Count()} units of sand have come to rest");
@@ -168,19 +170,20 @@ Point Next(Point fromPoint, Direction direction) => direction switch
     return (min, max);
 }
 
-void PrintDiagram(Point min, Point max, ISet<Point> occupiedRock, ISet<Point> occupiedSand, Point sandSource)
+void PrintDiagram(Point min, Point max, int floorY, ISet<Point> occupiedRock, ISet<Point> occupiedSand, Point sandSource)
 {
-    int width = max.X - min.X + 1;
-    int height = max.Y - min.Y + 1;
+    const int marginX = 30; // squares of margin on each side
+    int width = max.X - min.X + 1 + 2 * marginX;
+    int height = Math.Max(max.Y, floorY) - min.Y + 1;
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
-            int x = j + min.X;
+            int x = j + min.X - marginX;
             int y = i + min.Y;
             var point = new Point(x, y);
             char draw;
-            if (occupiedRock.Contains(point))
+            if (y == floorY || occupiedRock.Contains(point))
             {
                 draw = '#';
             }
@@ -201,6 +204,9 @@ void PrintDiagram(Point min, Point max, ISet<Point> occupiedRock, ISet<Point> oc
         Console.WriteLine();
     }
 }
+
+bool IsBlocked(Point p, int floorY, params ISet<Point>[] occupied)
+    => p.Y == floorY || IsOccupied(p, occupied);
 
 bool IsOccupied(Point p, params ISet<Point>[] occupied) => occupied.Any(o => o.Contains(p));
 
