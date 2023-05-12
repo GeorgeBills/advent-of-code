@@ -19,7 +19,6 @@ var parsed = File.ReadLines(file)
         }
     );
 
-int numValves = parsed.Count();
 var indexes = parsed.Select((p, idx) => (p.ID, idx)).ToDictionary(x => x.ID, x => x.idx);
 int[] flows = parsed.Select(v => v.Flow).ToArray();
 string[] valves = parsed.Select(v => v.ID).ToArray();
@@ -31,50 +30,64 @@ ulong consider = flows
     .Where(fi => fi.flow > 0)
     .Aggregate(0ul, (acc, fi) => acc | (1ul << fi.idx));
 
-const string start = "AA";
-const int time = 30;
+const string start = "AA"; // "start at valve AA"
+const int time = 26;       // "leaving you with only 26 minutes"
 int startIndex = indexes[start];
 
-var memo = new Dictionary<(int, ulong, int), int>();
+var memo = new Dictionary<State, int>();
+
+var startState = new State(startIndex, startIndex, consider, time, us: true);
 
 var sw = Stopwatch.StartNew();
-int best = Search(startIndex, consider);
+int best = Search(startState);
 sw.Stop();
 
 Console.WriteLine($"maximum score is {best} (elapsed: {sw.Elapsed}; memoised: {memo.Count()})");
 
-int Search(int node, ulong consider, int time = time)
+int Search(State state)
 {
     int score = 0;
 
-    if (time <= 0)
+    if (state.time <= 0)
     {
         return score;
     }
 
-    if (memo.TryGetValue((node, consider, time), out score))
+    if (memo.TryGetValue(state, out score))
     {
         return score;
     }
 
     int best = int.MinValue;
 
+    int node = state.us ? state.nodeUs : state.nodeEl;
+
     // search adjacent positions
     foreach (int adjacent in edges[node])
     {
-        score = Search(adjacent, consider, time - 1);
+        var newstate = state.us
+            ? state with { nodeUs = adjacent, us = false }
+            : state with { nodeEl = adjacent, us = true, time = state.time - 1 };
+        score = Search(newstate);
         best = Math.Max(score, best);
     }
 
     // possibly open the valve at our current position
-    if ((consider & (1ul << node)) != 0)
+    bool openable = (state.consider & (1ul << node)) != 0;
+    if (openable)
     {
-        int released = (time - 1) * flows[node];
-        score = released + Search(node, consider ^ (1ul << node), time - 1);
+        int released = (state.time - 1) * flows[node];      // increase our score
+        ulong newconsider = state.consider ^ (1ul << node); // no longer consider the closed valve
+        var newstate = state.us
+            ? state with { consider = newconsider, us = false }
+            : state with { consider = newconsider, us = true, time = state.time - 1 };
+        score = released + Search(newstate);
         best = Math.Max(score, best);
     }
 
-    memo[(node, consider, time)] = best;
+    memo[state] = best;
 
     return best;
 }
+
+readonly record struct State(int nodeUs, int nodeEl, ulong consider, int time, bool us);
