@@ -20,19 +20,10 @@ var parsed = File.ReadLines(file)
     );
 
 int numValves = parsed.Count();
+var indexes = parsed.Select((p, idx) => (p.ID, idx)).ToDictionary(x => x.ID, x => x.idx);
 int[] flows = parsed.Select(v => v.Flow).ToArray();
 string[] valves = parsed.Select(v => v.ID).ToArray();
-bool[,] edges = new bool[numValves, numValves];
-
-foreach (var valve in parsed)
-{
-    int nodeIndex = Array.FindIndex(valves, id => id == valve.ID);
-    foreach (string tunnel in valve.TunnelsTo)
-    {
-        int adjacentIndex = Array.FindIndex(valves, id => id == tunnel);
-        edges[nodeIndex, adjacentIndex] = true;
-    }
-}
+int[][] edges = parsed.Select(p => p.TunnelsTo.Select(t => indexes[t]).ToArray()).ToArray();
 
 // consider only positive flow valves that haven't been opened
 ulong consider = flows
@@ -42,7 +33,7 @@ ulong consider = flows
 
 const string start = "AA";
 const int time = 30;
-int startIndex = Array.FindIndex(valves, id => id == start);
+int startIndex = indexes[start];
 
 var memo = new Dictionary<(int, ulong, int), int>();
 
@@ -69,13 +60,10 @@ int Search(int node, ulong consider, int time = time)
     int best = int.MinValue;
 
     // search adjacent positions
-    for (int adjacent = 0; adjacent < numValves; adjacent++)
+    foreach (int adjacent in edges[node])
     {
-        if (edges[node, adjacent])
-        {
-            score = Search(adjacent, consider, time - 1);
-            best = Math.Max(score, best);
-        }
+        score = Search(adjacent, consider, time - 1);
+        best = Math.Max(score, best);
     }
 
     // possibly open the valve at our current position
