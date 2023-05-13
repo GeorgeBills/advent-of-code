@@ -19,10 +19,12 @@ var parsed = File.ReadLines(file)
         }
     );
 
+int numNodes = parsed.Count();
 var indexes = parsed.Select((p, idx) => (p.ID, idx)).ToDictionary(x => x.ID, x => x.idx);
 int[] flows = parsed.Select(v => v.Flow).ToArray();
 string[] valves = parsed.Select(v => v.ID).ToArray();
 int[][] edges = parsed.Select(p => p.TunnelsTo.Select(t => indexes[t]).ToArray()).ToArray();
+int[,] costs = FloydWarshall(edges);
 
 // consider only positive flow valves that haven't been opened
 ulong consider = flows
@@ -31,12 +33,12 @@ ulong consider = flows
     .Aggregate(0ul, (acc, fi) => acc | (1ul << fi.idx));
 
 const string start = "AA"; // "start at valve AA"
-const int time = 26;       // "leaving you with only 26 minutes"
+const int time = 30;       // "leaving you with only 26 minutes"
 int startIndex = indexes[start];
 
 var memo = new Dictionary<State, int>();
 
-var startState = new State(startIndex, startIndex, consider, time, us: true);
+var startState = new State(startIndex, consider, time);
 
 var sw = Stopwatch.StartNew();
 int best = Search(startState);
@@ -46,43 +48,39 @@ Console.WriteLine($"maximum score is {best} (elapsed: {sw.Elapsed}; memoised: {m
 
 int Search(State state)
 {
-    int score = 0;
-
-    if (state.time <= 0)
+    if (memo.TryGetValue(state, out int cachedScore))
     {
-        return score;
+        return cachedScore;
     }
 
-    if (memo.TryGetValue(state, out score))
+    int best = 0;
+    for (int valveidx = 0; valveidx < numNodes; valveidx++)
     {
-        return score;
-    }
+        int cost = costs[state.node, valveidx] + 1; // +1 to actually open the valve
+        if (cost > state.time)
+        {
+            // can't afford to move to and open this valve
+            continue;
+        }
 
-    int best = int.MinValue;
+        bool openable = (state.consider & (1ul << valveidx)) != 0;
+        if (!openable)
+        {
+            // either already open or zero flow rate so no point opening
+            continue;
+        }
 
-    int node = state.us ? state.nodeUs : state.nodeEl;
-
-    // search adjacent positions
-    foreach (int adjacent in edges[node])
-    {
-        var newstate = state.us
-            ? state with { nodeUs = adjacent, us = false }
-            : state with { nodeEl = adjacent, us = true, time = state.time - 1 };
-        score = Search(newstate);
-        best = Math.Max(score, best);
-    }
-
-    // possibly open the valve at our current position
-    bool openable = (state.consider & (1ul << node)) != 0;
-    if (openable)
-    {
-        int released = (state.time - 1) * flows[node];      // increase our score
-        ulong newconsider = state.consider ^ (1ul << node); // no longer consider the closed valve
-        var newstate = state.us
-            ? state with { consider = newconsider, us = false }
-            : state with { consider = newconsider, us = true, time = state.time - 1 };
-        score = released + Search(newstate);
-        best = Math.Max(score, best);
+        // consider moving to and opening the valve
+        int released = (state.time - cost) * flows[valveidx];
+        int score = Search(
+            state with
+            {
+                node = valveidx,                               // move to the valve
+                consider = state.consider ^ (1ul << valveidx), // close the valve
+                time = state.time - cost,
+            }
+        );
+        best = Math.Max(score + released, best);
     }
 
     memo[state] = best;
@@ -90,4 +88,68 @@ int Search(State state)
     return best;
 }
 
-readonly record struct State(int nodeUs, int nodeEl, ulong consider, int time, bool us);
+int[,] FloydWarshall(int[][] edges)
+{
+    int[,] costs = new int[numNodes, numNodes]; // cost from i to j
+
+    // set initial costs
+    for (int i = 0; i < numNodes; i++)
+    {
+        for (int j = 0; j < numNodes; j++)
+        {
+            if (i == j) // self
+            {
+                costs[i, j] = 0;
+            }
+            else if (edges[i].Contains(j)) // edge with weight 1 (direct path)
+            {
+                costs[i, j] = 1;
+            }
+            else // no edge: infinity (for now)
+            {
+                costs[i, j] = int.MaxValue;
+            }
+        }
+    }
+
+    // iteratively refne costs including nodes from sets [], [1], [1,2], [1,2,...k].
+    for (int k = 0; k < numNodes; k++)
+    {
+        for (int i = 0; i < numNodes; i++)
+        {
+            for (int j = 0; j < numNodes; j++)
+            {
+                int current = costs[i, j];
+                int withk = costs[i, k] != int.MaxValue && costs[k, j] != int.MaxValue
+                    ? costs[i, k] + costs[k, j]
+                    : int.MaxValue;
+                // if withk is less than current, then it's faster to go from i
+                // to j via k (i => k => j) compared to our current cheapest
+                // path, and withk is thus our new cheapest path
+                costs[i, j] = Math.Min(current, withk);
+            }
+        }
+    }
+
+#if DEBUG // print our cost matrix
+    Console.Write("{0,3}", String.Empty);
+    for (int j = 0; j < numNodes; j++)
+    {
+        Console.Write("{0,3}", valves[j]);
+    }
+    Console.WriteLine();
+    for (int i = 0; i < numNodes; i++)
+    {
+        Console.Write("{0,3}", valves[i]);
+        for (int j = 0; j < numNodes; j++)
+        {
+            Console.Write("{0,3:D}", costs[i, j] == int.MaxValue ? '∞' : costs[i, j]);
+        }
+        Console.WriteLine();
+    }
+#endif
+
+    return costs;
+}
+
+readonly record struct State(int node, ulong consider, int time);
