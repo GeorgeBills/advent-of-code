@@ -1,23 +1,16 @@
 ﻿using System.Diagnostics;
 using System.Text.RegularExpressions;
 
-string file = args[0];
-int ysearch = int.Parse(args[1]);
+string file = args.Length == 1 ? args[0] : "eg.txt";
 
 var (sensors, beacons, searched) = Parse(file);
 
-// draw a bounding box around our search area
-var box = searched.Aggregate(
-    new Rectangle(int.MaxValue, int.MaxValue, int.MinValue, int.MinValue),
-    (acc, circle) =>
-        acc with
-        {
-            MinX = Math.Min(acc.MinX, circle.centre.X - circle.radius),
-            MinY = Math.Min(acc.MinY, circle.centre.Y - circle.radius),
-            MaxX = Math.Max(acc.MaxX, circle.centre.X + circle.radius),
-            MaxY = Math.Max(acc.MaxY, circle.centre.Y + circle.radius),
-        }
-    );
+var box = new Rectangle(
+    MinX: 0,
+    MinY: 0,
+    MaxX: 20,
+    MaxY: 20
+);
 
 #if DEBUG
 Console.WriteLine($"bounding box: {box}");
@@ -35,19 +28,97 @@ else
 }
 #endif
 
-var xrange = Enumerable.Range(box.MinX, box.Width + 1);
+var stopwatch = new Stopwatch();
+stopwatch.Start();
+var point = Search(box);
+stopwatch.Stop();
 
-Console.WriteLine($"searching y={ysearch} ({xrange.Count()} total squares)");
+if (point == null)
+{
+    throw new Exception("no point found?!?");
+}
 
-var sw = new Stopwatch();
-sw.Start();
-int answer = xrange
-    .Select(x => new Point(x, ysearch))
-    .Where(p => !MayContainBeacon(p, beacons, searched))
-    .Count();
-sw.Stop();
+int frequency = point.Value.X * 4_000_000 + point.Value.Y;
+Console.WriteLine($"point is at {point} with frequency {frequency} (took {stopwatch.Elapsed})");
 
-Console.WriteLine($"{answer} positions may not contain a beacon (took {sw.Elapsed})");
+const int maxSearchDepth = 10;
+
+Point? Search(Rectangle rect, int depth = 0)
+{
+    if (depth > maxSearchDepth)
+    {
+        return null;
+    }
+
+    var circle = searched.FirstOrDefault(circle => circle.Contains(rect));
+    if (circle != default)
+    {
+#if DEBUG
+        Console.WriteLine($"{circle} fully contains {rect}");
+#endif
+        return null;
+    }
+
+#if DEBUG
+    Console.WriteLine($"searching {rect}");
+#endif
+
+    if (rect.Area == 1)
+    {
+        var point = new Point(rect.MinX, rect.MinY);
+        var circ = searched.FirstOrDefault(circle => circle.Contains(point));
+        if (circ != default)
+        {
+            // we're conservative (rounding radius down) in our "circle contains
+            // rectangle" checks so need to check if any of the searched circles
+            // contain this point before we can return it.
+            Console.WriteLine($"{circle} contains {point}");
+            return null;
+        }
+
+        return point; // found it!
+    }
+
+    var (nw, ne, sw, se) = Split(rect);
+
+    var rects = new[] { nw, ne, sw, se };
+    return rects
+        .Select(r => Search(r, depth + 1))
+        .FirstOrDefault(point => point != null);
+}
+
+(Rectangle NW, Rectangle NE, Rectangle SW, Rectangle SE) Split(Rectangle rect)
+{
+    int halfWidth = rect.Width / 2;
+    int halfHeight = rect.Height / 2;
+
+    var nw = new Rectangle(
+        rect.MinX,
+        rect.MinY,
+        rect.MinX + halfWidth,
+        rect.MinY + halfHeight
+    );
+    var ne = new Rectangle(
+        rect.MinX + halfWidth + 1,
+        rect.MinY,
+        rect.MaxX,
+        rect.MinY + halfHeight
+    );
+    var sw = new Rectangle(
+        rect.MinX,
+        rect.MinY + halfHeight + 1,
+        rect.MinX + halfWidth,
+        rect.MaxY
+    );
+    var se = new Rectangle(
+        rect.MinX + halfWidth + 1,
+        rect.MinY + halfHeight + 1,
+        rect.MaxX,
+        rect.MaxY
+    );
+
+    return (nw, ne, sw, se);
+}
 
 bool MayContainBeacon(Point point, ISet<Point> beacons, IEnumerable<Circle> searched) =>
     beacons.Contains(point) || !searched.Any(circle => circle.Contains(point));
@@ -105,7 +176,17 @@ void PrintDiagram(Rectangle box, ISet<Point> sensors, ISet<Point> beacons, IEnum
 
 readonly record struct Circle(Point centre, int radius)
 {
+    private Point NW { get => centre with { X = centre.X - radius / 2, Y = centre.Y + radius / 2 }; }
+    private Point NE { get => centre with { X = centre.X + radius / 2, Y = centre.Y + radius / 2 }; }
+    private Point SW { get => centre with { X = centre.X - radius / 2, Y = centre.Y - radius / 2 }; }
+    private Point SE { get => centre with { X = centre.X + radius / 2, Y = centre.Y - radius / 2 }; }
+
     public bool Contains(Point p) => centre.ManhattanDistance(p) <= radius;
+    public bool Contains(Rectangle r) =>
+        this.NW.X <= r.MinX && this.NW.Y >= r.MaxY &&
+        this.NE.X >= r.MaxX && this.NE.Y >= r.MaxY &&
+        this.SW.X <= r.MinX && this.SW.Y <= r.MinY &&
+        this.SE.X >= r.MaxX && this.SE.Y <= r.MinY;
 }
 
 readonly record struct Point(int X, int Y)
@@ -116,6 +197,7 @@ readonly record struct Point(int X, int Y)
 
 readonly record struct Rectangle(int MinX, int MinY, int MaxX, int MaxY)
 {
-    public int Height { get => MaxY - MinY; }
-    public int Width { get => MaxX - MinX; }
+    public int Height { get => MaxY - MinY + 1; }
+    public int Width { get => MaxX - MinX + 1; }
+    public int Area { get => Height * Width; }
 }
