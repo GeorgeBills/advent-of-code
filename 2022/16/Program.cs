@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Numerics;
 using System.Text.RegularExpressions;
 
 string file = args.Length == 1 ? args[0] : "eg.txt";
@@ -26,25 +27,99 @@ string[] valves = parsed.Select(v => v.ID).ToArray();
 int[][] edges = parsed.Select(p => p.TunnelsTo.Select(t => indexes[t]).ToArray()).ToArray();
 int[,] costs = FloydWarshall(edges);
 
-// consider only positive flow valves that haven't been opened
-ulong consider = flows
+// consider only positive flow valves
+var nonzeroidxs = flows
     .Select((flow, idx) => (flow, idx))
     .Where(fi => fi.flow > 0)
-    .Aggregate(0ul, (acc, fi) => acc | (1ul << fi.idx));
+    .Select(fi => fi.idx);
+
+var pairs = PowerSet(nonzeroidxs).Where(s => s.Count() > 0).Select(s => (s, nonzeroidxs.Except(s)));
+
+ulong nonzero = nonzeroidxs.Aggregate(0ul, (acc, idx) => acc | (1ul << idx));
+
+Console.WriteLine($"{pairs.Count()} total pairs to search");
 
 const string start = "AA"; // "start at valve AA"
-const int time = 30;       // "leaving you with only 26 minutes"
+const int time = 26;       // "leaving you with only 26 minutes"
 int startIndex = indexes[start];
 
 var memo = new Dictionary<State, int>();
 
-var startState = new State(startIndex, consider, time);
-
 var sw = Stopwatch.StartNew();
-int best = Search(startState);
+
+var best = pairs
+    .Select(
+        pair => (
+            usOpened: pair.Item1.Aggregate(0ul, (acc, idx) => acc | (1ul << idx)),
+            elOpened: pair.Item2.Aggregate(0ul, (acc, idx) => acc | (1ul << idx))
+        )
+    )
+    .Select(
+        pair => (
+            pair.usOpened,
+            usStartState: new State(startIndex, opened: pair.usOpened, time),
+            pair.elOpened,
+            elStartState: new State(startIndex, opened: pair.elOpened, time)
+        )
+    )
+    .Select(
+        pair => (
+            pair.usOpened,
+            usScore: Search(pair.usStartState),
+            pair.elOpened,
+            elScore: Search(pair.elStartState)
+        )
+    )
+    .Select(pair =>
+        new
+        {
+            pair.usScore,
+            usExplored = String.Join(',', ToValves(nonzero & ~pair.usOpened)),
+            pair.elScore,
+            elExplored = String.Join(',', ToValves(nonzero & ~pair.elOpened)),
+            total = pair.usScore + pair.elScore
+        }
+    )
+    .MaxBy(pair => pair.total);
+
 sw.Stop();
 
-Console.WriteLine($"maximum score is {best} (elapsed: {sw.Elapsed}; memoised: {memo.Count()})");
+Console.WriteLine($"{best} (elapsed: {sw.ElapsedMilliseconds}ms; memoised: {memo.Count()})");
+
+/*
+ * []      => []
+ * [x]     => [], [x]
+ * [x,y]   => [], [x], [y], [x,y]
+ * [x,y,z] => [], [x], [y], [x,y], [z], [y,z], [x,z], [x,y,z] 
+ * [y,z]   => [],      [y],        [z], [y,z]
+ */
+IEnumerable<IEnumerable<T>> PowerSet<T>(IEnumerable<T> set)
+{
+    yield return new T[] { };
+
+    var first = set.FirstOrDefault();
+    var remainder = set.Skip(1);
+
+    if (set.Count() == 0)
+    {
+        yield break;
+    }
+
+    if (set.Count() >= 1)
+    {
+        yield return new T[] { first! };
+    }
+
+    if (set.Count() >= 2)
+    {
+        var powerset = PowerSet(remainder).Where(s => s.Count() > 0);
+        foreach (var s in powerset)
+        {
+            yield return s;
+            yield return s.Prepend(first!);
+        }
+    }
+}
 
 int Search(State state)
 {
@@ -63,8 +138,8 @@ int Search(State state)
             continue;
         }
 
-        bool openable = (state.consider & (1ul << valveidx)) != 0;
-        if (!openable)
+        bool consider = (~state.opened & nonzero & (1ul << valveidx)) != 0;
+        if (!consider)
         {
             // either already open or zero flow rate so no point opening
             continue;
@@ -75,8 +150,8 @@ int Search(State state)
         int score = Search(
             state with
             {
-                node = valveidx,                               // move to the valve
-                consider = state.consider ^ (1ul << valveidx), // close the valve
+                node = valveidx,                           // move to the valve
+                opened = state.opened | (1ul << valveidx), // open the valve
                 time = state.time - cost,
             }
         );
@@ -152,4 +227,15 @@ int[,] FloydWarshall(int[][] edges)
     return costs;
 }
 
-readonly record struct State(int node, ulong consider, int time);
+IEnumerable<string> ToValves(ulong idxs)
+{
+    while (idxs != 0)
+    {
+        string bitstr = Convert.ToString((long)idxs, 2);
+        int idx = BitOperations.TrailingZeroCount(idxs);
+        idxs ^= (1ul << idx);
+        yield return valves[idx];
+    }
+}
+
+readonly record struct State(int node, ulong opened, int time);
