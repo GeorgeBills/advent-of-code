@@ -2,14 +2,15 @@
 using System.Text.RegularExpressions;
 
 string file = args.Length == 1 ? args[0] : "eg.txt";
+int maxXY = file.EndsWith("eg.txt") ? 20 : 4_000_000;
 
 var (sensors, beacons, searched) = Parse(file);
 
 var box = new Rectangle(
     MinX: 0,
     MinY: 0,
-    MaxX: 20,
-    MaxY: 20
+    MaxX: maxXY,
+    MaxY: maxXY
 );
 
 #if DEBUG
@@ -63,20 +64,24 @@ Point? Search(Rectangle rect, int depth = 0)
     Console.WriteLine($"searching {rect}");
 #endif
 
-    if (rect.Area == 1)
+    if (rect.Width <= 1 || rect.Height <= 1)
     {
-        var point = new Point(rect.MinX, rect.MinY);
-        var circ = searched.FirstOrDefault(circle => circle.Contains(point));
-        if (circ != default)
+        foreach (var point in rect.Points())
         {
-            // we're conservative (rounding radius down) in our "circle contains
-            // rectangle" checks so need to check if any of the searched circles
-            // contain this point before we can return it.
-            Console.WriteLine($"{circle} contains {point}");
-            return null;
+            var circ = searched.FirstOrDefault(circle => circle.Contains(point));
+            if (circ != default)
+            {
+                // we're conservative (rounding radius down) in our "circle
+                // contains rectangle" checks so need to check if any of the
+                // searched circles contain this point before we can return it.
+                Console.WriteLine($"{circle} contains {point}");
+                return null;
+            }
+
+            return point; // found it!
         }
 
-        return point; // found it!
+        return null; // not here
     }
 
     var (nw, ne, sw, se) = Split(rect);
@@ -89,6 +94,11 @@ Point? Search(Rectangle rect, int depth = 0)
 
 (Rectangle NW, Rectangle NE, Rectangle SW, Rectangle SE) Split(Rectangle rect)
 {
+    if (rect.Width <= 1 || rect.Height <= 1)
+    {
+        throw new ArgumentException($"can't split rectangle of height {rect.Height} and width {rect.Width}", nameof(rect));
+    }
+
     int halfWidth = rect.Width / 2;
     int halfHeight = rect.Height / 2;
 
@@ -200,4 +210,15 @@ readonly record struct Rectangle(int MinX, int MinY, int MaxX, int MaxY)
     public int Height { get => MaxY - MinY + 1; }
     public int Width { get => MaxX - MinX + 1; }
     public int Area { get => Height * Width; }
+
+    public IEnumerable<Point> Points()
+    {
+        for (int x = MinX; x <= MaxX; x++)
+        {
+            for (int y = MinY; y <= MaxY; y++)
+            {
+                yield return new Point(x, y);
+            }
+        }
+    }
 }
