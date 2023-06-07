@@ -1,41 +1,52 @@
-﻿const int minX = 0;
+﻿using System.Diagnostics;
+
+const int minX = 0;
 const int maxX = 6; // "exactly seven units wide" (and we're zero indexed)
 const int minY = 0;
-const int numRocks = 2022; // "after 2022 rocks have stopped"
+const long numRocks = 1000000000000; // "after 1000000000000 rocks have stopped" (!!!)
 
 string file = args.Length == 1 ? args[0] : "eg.txt";
-char[] jetPattern = File.ReadAllText(file).ToCharArray();
+char[] jets = File.ReadAllText(file).ToCharArray();
 var occupied = new HashSet<Point>();
 
-var rocks = GetRocks();
+var shapes = GetRocks();
 
-DebugDrawRocks(rocks);
+// Dictionary of previously seen states to the height at that state. If we see a
+// state where a rock has stopped moving with the same X offset and the same jet
+// pattern index as a previously seen rock of the same shape then we're going to
+// repeat history from then on, and can fast-forward.
+var history = new Dictionary<State, (long height, long i)>();
 
-int currentJetIndex = 0;
-int currentHeight = 0;
-for (int i = 0; i <= numRocks - 1; i++)
+// DebugDrawRocks(rocks);
+
+int jetidx = 0;
+long height = 0;
+var sw = Stopwatch.StartNew();
+for (long i = 0; i <= numRocks - 1; i++)
 {
-    Console.WriteLine($"simulating rock {i + 1} (current height: {currentHeight})");
+    Console.WriteLine($"simulating rock {i + 1} out of {numRocks} ({(double)(i + 1) / numRocks:P}; {sw.ElapsedMilliseconds}ms; current height: {height})");
+
+    int shapeidx = (int)(i % shapes.Length);
 
     // "each rock appears so that...
     // ...its left edge is two units away from the left wall and..."
     const int relativeX = +2;
 
     // "...its bottom edge is three units above the highest rock in the room"
-    int relativeY = currentHeight + 3;
+    long relativeY = height + 3;
 
-    var shape = rocks[i % rocks.Length];
+    var shape = shapes[shapeidx];
     var position = new Vector(relativeX, relativeY);
     var rock = new Rock(shape, position);
 
     while (true) // until rock comes to rest
     {
-        DebugDraw(rock, currentHeight, occupied);
+        // DebugDraw(rock, height, occupied);
 
         // alternates between being pushed by a jet of hot gas one unit...
         {
-            char jet = jetPattern[currentJetIndex];
-            currentJetIndex = (currentJetIndex + 1) % jetPattern.Length;
+            char jet = jets[jetidx];
+            jetidx = (jetidx + 1) % jets.Length;
 
             var push = jet switch
             {
@@ -46,7 +57,7 @@ for (int i = 0; i <= numRocks - 1; i++)
 
             (_, rock) = rock.TryMove(push, occupied, minX, maxX, minY);
 
-            DebugDraw(rock, currentHeight, occupied);
+            // DebugDraw(rock, height, occupied);
         }
 
         // ...and then falling one unit down
@@ -64,9 +75,46 @@ for (int i = 0; i <= numRocks - 1; i++)
                 }
 
                 // we're zero indexed: a rock piece at Y=0 has a height of 1
-                currentHeight = Math.Max(currentHeight, rock.MaxY() + 1);
+                height = Math.Max(height, rock.MaxY() + 1);
 
-                DebugDraw(null, currentHeight, occupied);
+                var state = new State(shapeidx, jetidx, rock.Offset.X);
+                if (history.TryGetValue(state, out var previous))
+                {
+                    Console.WriteLine($"state {state} last seen with height {previous.height} at iteration {previous.i}");
+
+                    long remaining = numRocks - i;
+                    Console.WriteLine($"current height: {height}; current iteration: {i}; {remaining} iterations remaining");
+
+                    long cycles = i - previous.i;
+                    Console.WriteLine($"we will repeat the same pattern every {cycles} iterations");
+
+                    long increases = height - previous.height;
+                    Console.WriteLine($"each time we repeat that pattern we will add {increases} height");
+
+                    long skipcycles = remaining / cycles;
+                    long skipiterations = skipcycles * cycles;
+                    long add = skipcycles * increases - 1;
+                    long remainder = remaining % cycles;
+                    Console.WriteLine($"iterating {skipiterations} more times will add {add} height with {remainder} iterations remaining");
+
+                    i += skipiterations;
+                    height += add;
+                    Console.WriteLine($"fast-forwarding: i = {i}; height = {height}");
+
+                    // make sure any rocks in remainder clip properly
+                    Console.WriteLine($"translating {occupied.Count()} occupied points vertically up by {add}");
+                    occupied = occupied.Select(p => p with { Y = p.Y + add }).ToHashSet();
+
+                    // clear history to make sure we don't hit any of these in the remainder
+                    // we won't detect the cycle again because remainder is less than a full cycle
+                    history.Clear();
+                }
+                else
+                {
+                    history[state] = (height, i);
+                }
+
+                // DebugDraw(null, height, occupied);
 
                 break;
             }
@@ -74,7 +122,7 @@ for (int i = 0; i <= numRocks - 1; i++)
     }
 }
 
-Console.WriteLine($"current height is {currentHeight}");
+Console.WriteLine($"current height is {height}");
 
 static Shape[] GetRocks() => new[] {
     // Y=0 is the bottom
@@ -116,10 +164,10 @@ static Shape[] GetRocks() => new[] {
 static void DebugDraw(Rock? rock, int currentHeight, ISet<Point> occupied)
 {
 #if DEBUG
-    int maxY = rock != null ? rock.MaxY() : currentHeight;
-    for (int y = maxY; y >= minY - 1; y--)
+    long maxY = rock != null ? rock.MaxY() : currentHeight;
+    for (long y = maxY; y >= minY - 1; y--)
     {
-        for (int x = minX - 1; x <= maxX + 1; x++)
+        for (long x = minX - 1; x <= maxX + 1; x++)
         {
             var point = new Point(x, y);
 
@@ -163,6 +211,8 @@ static void DebugDrawRocks(Shape[] rocks)
 #endif
 }
 
+record State(int shapeidx, int jetidx, long xoffset);
+
 record Rock(Shape Shape, Vector Offset)
 {
     public IEnumerable<Point> Points => Shape.Points.Select(p => p.Translate(Offset));
@@ -170,7 +220,7 @@ record Rock(Shape Shape, Vector Offset)
     private bool IsClipping(ISet<Point> occupied, int minX, int maxX, int minY) =>
         Points.Any(p => p.X < minX || p.X > maxX || p.Y < minY || occupied.Contains(p));
 
-    public int MaxY() => Points.Select(p => p.Y).Max();
+    public long MaxY() => Points.Select(p => p.Y).Max();
 
     public bool Contains(Point point) => Points.Any(p => p == point);
 
@@ -185,13 +235,13 @@ record Rock(Shape Shape, Vector Offset)
 
 record Shape(IEnumerable<Point> Points)
 {
-    private int MinX = Points.MinBy(p => p.X)!.X;
-    private int MinY = Points.MinBy(p => p.Y)!.Y;
-    private int MaxX = Points.MaxBy(p => p.X)!.X;
-    private int MaxY = Points.MaxBy(p => p.Y)!.Y;
+    private long MinX = Points.MinBy(p => p.X)!.X;
+    private long MinY = Points.MinBy(p => p.Y)!.Y;
+    private long MaxX = Points.MaxBy(p => p.X)!.X;
+    private long MaxY = Points.MaxBy(p => p.Y)!.Y;
 
-    public int Width { get => MaxX - MinX + 1; }
-    public int Height { get => MaxY - MinY + 1; }
+    public long Width { get => MaxX - MinX + 1; }
+    public long Height { get => MaxY - MinY + 1; }
 
     public char[,] ToDiagram(char filled = '#')
     {
@@ -208,8 +258,8 @@ record Shape(IEnumerable<Point> Points)
         // fill in points
         foreach (var point in Points)
         {
-            int x = point.X - MinX;
-            int y = point.Y - MinY;
+            long x = point.X - MinX;
+            long y = point.Y - MinY;
             diagram[y, x] = filled;
         }
 
@@ -217,12 +267,12 @@ record Shape(IEnumerable<Point> Points)
     }
 }
 
-record Vector(int X, int Y)
+record Vector(long X, long Y)
 {
     public Vector Add(Vector v) => this with { X = this.X + v.X, Y = this.Y + v.Y };
 }
 
-record Point(int X, int Y)
+record Point(long X, long Y)
 {
     public Point Translate(Vector v) => this with { X = this.X + v.X, Y = this.Y + v.Y };
 }
