@@ -16,9 +16,6 @@ var bounding = BoundingBox.FromPoints(cubes);
 Console.WriteLine($"droplet is bound within {bounding}");
 Console.WriteLine($"there are {bounding.Area()} total points inside the bounding box");
 
-// flood fill all the points, to colour in (mark as cubes) any points that are
-// entirely within the droplet. this is initially slow - we're visiting a lot of
-// points! - but should get faster as we colour in more cubes in the hashset.
 var sw = Stopwatch.StartNew();
 var points = bounding.Points().ToArray();
 for (int i = 0; i < points.Length; i++)
@@ -53,11 +50,6 @@ void FloodFill(Point start)
     var frontier = new Stack<Point>();
     var visited = new HashSet<Point>();
 
-    // if the point we're filling connects to the outside of the droplet (i.e.
-    // if we see a point outside of the bounding box) then there's a path from
-    // this point (and from every visited point) to the outside of the droplet.
-    bool external = false;
-
     frontier.Push(start);
     while (frontier.Any())
     {
@@ -67,8 +59,7 @@ void FloodFill(Point start)
             point.Y < bounding.MinY || point.Y > bounding.MaxY ||
             point.Z < bounding.MinZ || point.Z > bounding.MaxZ)
         {
-            external = true;
-            continue; // stop filling, or we'll recurse forever
+            return; // all visited points, and any points we will visit, are external
         }
 
         var visit = point
@@ -87,13 +78,11 @@ void FloodFill(Point start)
     // if the visited points do not connect to the outside of the droplet, then
     // all the visited points must be internal to the droplet (i.e. we have an
     // air pocket).
-    if (!external)
+    //
+    // add all visited points to our cubes.
+    foreach (var point in visited)
     {
-        // add all visited points to our cubes.
-        foreach (var point in visited)
-        {
-            cubes.Add(point);
-        }
+        cubes.Add(point);
     }
 }
 
