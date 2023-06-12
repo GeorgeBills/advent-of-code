@@ -10,79 +10,22 @@ var start = new State(
     TimeRemaining: 24              // "after 24 minutes"
 );
 
+int qualities = 0;
 foreach (var bp in blueprints)
 {
-    int geodes = Search(bp, start);
-    Console.WriteLine($"best geode count for blueprint {bp} is {geodes}");
+    var searcher = new Searcher();
+    int geodes = searcher.Search(bp, start);
+
+    // "Determine the quality level of each blueprint by multiplying that
+    // blueprint's ID number with the largest number of geodes that can be
+    // opened in 24 minutes using that blueprint."
+    int quality = geodes * bp.Number;
+
+    Console.WriteLine($"best geode count for blueprint {bp.Number} is {geodes} (quality {quality})");
+    qualities += quality;
 }
 
-static int Search(Blueprint blueprint, State state)
-{
-    if (state.TimeRemaining == 0)
-    {
-        return state.Resources.Geode;
-    }
-
-    var successors = GenerateSuccessors(blueprint, state);
-
-    var best = successors
-        .Select(successor => Search(blueprint, successor))
-        .Max();
-
-    return best;
-}
-
-static IEnumerable<State> GenerateSuccessors(Blueprint blueprint, State state)
-{
-    var (robots, resourcesBefore, timeRemaining) = state;
-
-    // "Each robot can collect 1 of its resource type per minute."
-    var resourcesAfter = resourcesBefore.Add(robots);
-
-    var stateAfter = state with
-    {
-        Resources = resourcesAfter,
-        TimeRemaining = timeRemaining - 1,
-    };
-
-    if (resourcesBefore.CanAfford(blueprint.OreRobotCosts))
-    {
-        yield return stateAfter with
-        {
-            Robots = robots with { Ore = robots.Ore + 1 },
-            Resources = resourcesAfter.Subtract(blueprint.OreRobotCosts),
-        };
-    }
-
-    if (resourcesBefore.CanAfford(blueprint.ClayRobotCosts))
-    {
-        yield return stateAfter with
-        {
-            Robots = robots with { Clay = robots.Clay + 1 },
-            Resources = resourcesAfter.Subtract(blueprint.ClayRobotCosts),
-        };
-    }
-
-    if (resourcesBefore.CanAfford(blueprint.ObsidianRobotCosts))
-    {
-        yield return stateAfter with
-        {
-            Robots = robots with { Obsidian = robots.Obsidian + 1 },
-            Resources = resourcesAfter.Subtract(blueprint.ObsidianRobotCosts),
-        };
-    }
-
-    if (resourcesBefore.CanAfford(blueprint.GeodeRobotCosts))
-    {
-        yield return stateAfter with
-        {
-            Robots = robots with { Geode = robots.Geode + 1 },
-            Resources = resourcesAfter.Subtract(blueprint.GeodeRobotCosts),
-        };
-    }
-
-    yield return stateAfter; // not building any robots
-}
+Console.WriteLine($"the total quality is {qualities}");
 
 static IEnumerable<Blueprint> ParseBlueprints(string file)
 {
@@ -128,6 +71,116 @@ static IEnumerable<Blueprint> ParseBlueprints(string file)
 #endif
 
     return blueprints;
+}
+
+class Searcher
+{
+    private int best;
+    private readonly IDictionary<State, int> memo;
+
+    public Searcher()
+    {
+        this.best = 0;
+        this.memo = new Dictionary<State, int>();
+    }
+
+    public int Search(Blueprint blueprint, State state)
+    {
+        if (memo.TryGetValue(state, out int memoised))
+        {
+            return memoised;
+        }
+
+        var (robots, resources, timeRemaining) = state;
+
+        if (timeRemaining == 0)
+        {
+            int score = resources.Geode;
+            best = Math.Max(best, score);
+            return score;
+        }
+
+        // calculate the best possible score we can get from this position.
+        int possible =
+            resources.Geode +
+            (timeRemaining * robots.Geode) +             // all geode robots produce one geode every turn
+            ((timeRemaining * (timeRemaining + 1)) / 2); // assume we build a geode robot every turn (very optimistic...)
+
+        if (possible < best)
+        {
+            // we can't possibly beat our best known score. this branch of the
+            // tree can be abandoned.
+            return int.MinValue;
+        }
+
+        var successors = GenerateSuccessors(blueprint, state);
+
+        int max = 0;
+        foreach (var successor in successors)
+        {
+            int score = Search(blueprint, successor);
+            max = Math.Max(max, score);
+        }
+
+        memo[state] = max;
+
+        return best;
+    }
+
+    private static IEnumerable<State> GenerateSuccessors(Blueprint blueprint, State state)
+    {
+        var (robots, resourcesBefore, timeRemaining) = state;
+
+        // "Each robot can collect 1 of its resource type per minute."
+        var resourcesAfter = resourcesBefore.Add(robots);
+
+        var stateAfter = state with
+        {
+            Resources = resourcesAfter,
+            TimeRemaining = timeRemaining - 1,
+        };
+
+        // search the "deeper in the tech tree" robots first (i.e. be greedy) in
+        // the hopes that it'll lead to faster cutoffs.
+
+        if (resourcesBefore.CanAfford(blueprint.GeodeRobotCosts))
+        {
+            yield return stateAfter with
+            {
+                Robots = robots with { Geode = robots.Geode + 1 },
+                Resources = resourcesAfter.Subtract(blueprint.GeodeRobotCosts),
+            };
+        }
+
+        if (resourcesBefore.CanAfford(blueprint.ObsidianRobotCosts))
+        {
+            yield return stateAfter with
+            {
+                Robots = robots with { Obsidian = robots.Obsidian + 1 },
+                Resources = resourcesAfter.Subtract(blueprint.ObsidianRobotCosts),
+            };
+        }
+
+        if (resourcesBefore.CanAfford(blueprint.ClayRobotCosts))
+        {
+            yield return stateAfter with
+            {
+                Robots = robots with { Clay = robots.Clay + 1 },
+                Resources = resourcesAfter.Subtract(blueprint.ClayRobotCosts),
+            };
+        }
+
+        if (resourcesBefore.CanAfford(blueprint.OreRobotCosts))
+        {
+            yield return stateAfter with
+            {
+                Robots = robots with { Ore = robots.Ore + 1 },
+                Resources = resourcesAfter.Subtract(blueprint.OreRobotCosts),
+            };
+        }
+
+        yield return stateAfter; // not building any robots
+    }
 }
 
 record Blueprint(int Number, Resources OreRobotCosts, Resources ClayRobotCosts, Resources ObsidianRobotCosts, Resources GeodeRobotCosts);
