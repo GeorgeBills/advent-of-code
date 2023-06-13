@@ -28,8 +28,8 @@ int answer = 1;
 var sw = Stopwatch.StartNew();
 foreach (var bp in blueprints)
 {
-    var searcher = new Searcher();
-    int geodes = searcher.Search(bp, start);
+    var searcher = new Searcher(bp);
+    int geodes = searcher.Search(start);
     Console.WriteLine($"best geode count for blueprint {bp.Number} is {geodes}");
     answer *= geodes;
 }
@@ -78,14 +78,24 @@ class Searcher
 {
     private int best;
     private readonly IDictionary<State, int> memo;
+    private readonly Blueprint blueprint;
+    private readonly int maxOre;
+    private readonly int maxClay;
+    private readonly int maxObsidian;
 
-    public Searcher()
+    public Searcher(Blueprint blueprint)
     {
         this.best = 0;
         this.memo = new Dictionary<State, int>();
+        this.blueprint = blueprint;
+
+        var costs = blueprint.Costs();
+        this.maxOre = costs.Select(c => c.Ore).Max();
+        this.maxClay = costs.Select(c => c.Clay).Max();
+        this.maxObsidian = costs.Select(c => c.Obsidian).Max();
     }
 
-    public int Search(Blueprint blueprint, State state)
+    public int Search(State state)
     {
         if (memo.TryGetValue(state, out int memoised))
         {
@@ -118,7 +128,7 @@ class Searcher
         // this is hopefully the lowest guess we can make without ever underestimating.
         int possible =
             resources.Geode +
-            (canAffordNow ? timeRemaining : 0) + // if we build a geode robot now we'll get timeRemaining geodes from it
+            (canAffordNow && !canAffordSustained ? timeRemaining : 0) + // if we build a geode robot now we'll get timeRemaining geodes from it
             (timeRemaining * robots.Geode) +     // all geode robots produce one geode every turn
             Sum1N(timeRemaining - earliestSustainedBy);   // assume we build a geode robot every turn
 
@@ -134,7 +144,7 @@ class Searcher
         int max = 0;
         foreach (var successor in successors)
         {
-            int score = Search(blueprint, successor);
+            int score = Search(successor);
             max = Math.Max(max, score);
         }
 
@@ -168,7 +178,7 @@ class Searcher
                 .turn;
     }
 
-    private static IEnumerable<State> GenerateSuccessors(Blueprint blueprint, State state)
+    private IEnumerable<State> GenerateSuccessors(Blueprint blueprint, State state)
     {
         var (robots, resourcesBefore, timeRemaining) = state;
 
@@ -184,6 +194,11 @@ class Searcher
         // search the "deeper in the tech tree" robots first (i.e. be greedy) in
         // the hopes that it'll lead to faster cutoffs.
 
+        // don't consider states where we already have enough robots to produce
+        // the max of a resource we can spend (maxOre, maxObsidian, maxClay) and
+        // we would build another one. that robot type is maxed out, there's no
+        // benefit to be gained.
+
         if (resourcesBefore.CanAfford(blueprint.GeodeRobotCosts))
         {
             yield return stateAfter with
@@ -193,7 +208,7 @@ class Searcher
             };
         }
 
-        if (resourcesBefore.CanAfford(blueprint.ObsidianRobotCosts))
+        if (robots.Obsidian < this.maxObsidian && resourcesBefore.CanAfford(blueprint.ObsidianRobotCosts))
         {
             yield return stateAfter with
             {
@@ -202,7 +217,7 @@ class Searcher
             };
         }
 
-        if (resourcesBefore.CanAfford(blueprint.ClayRobotCosts))
+        if (robots.Clay < this.maxClay && resourcesBefore.CanAfford(blueprint.ClayRobotCosts))
         {
             yield return stateAfter with
             {
@@ -211,7 +226,7 @@ class Searcher
             };
         }
 
-        if (resourcesBefore.CanAfford(blueprint.OreRobotCosts))
+        if (robots.Ore < this.maxOre && resourcesBefore.CanAfford(blueprint.OreRobotCosts))
         {
             yield return stateAfter with
             {
@@ -224,7 +239,10 @@ class Searcher
     }
 }
 
-record Blueprint(int Number, Resources OreRobotCosts, Resources ClayRobotCosts, Resources ObsidianRobotCosts, Resources GeodeRobotCosts);
+record Blueprint(int Number, Resources OreRobotCosts, Resources ClayRobotCosts, Resources ObsidianRobotCosts, Resources GeodeRobotCosts)
+{
+    public IEnumerable<Resources> Costs() => new[] { OreRobotCosts, ClayRobotCosts, ObsidianRobotCosts, GeodeRobotCosts };
+}
 
 record Resources(int Ore = 0, int Clay = 0, int Obsidian = 0, int Geode = 0)
 {
