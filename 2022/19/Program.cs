@@ -1,31 +1,40 @@
-﻿using System.Text.RegularExpressions;
+﻿using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 string file = args.Length == 1 ? args[0] : "eg.txt";
 
-var blueprints = ParseBlueprints(file);
+// "Unfortunately, one of the elephants ate most of your blueprint list! Now,
+// only the first three blueprints in your list are intact."
+var blueprints = ParseBlueprints(file).Take(3);
+
+#if DEBUG
+Console.WriteLine($"{blueprints.Count()} blueprints parsed");
+foreach (var bp in blueprints)
+{
+    Console.WriteLine(bp);
+}
+#endif
 
 var start = new State(
     Robots: new Resources(Ore: 1), // "you have exactly one ore-collecting robot in your pack"
     Resources: new Resources(),
-    TimeRemaining: 24              // "after 24 minutes"
+    TimeRemaining: 32              // "you figure you probably have 32 minutes"
 );
 
-int qualities = 0;
+// "You no longer have enough blueprints to worry about quality levels. Instead,
+// for each of the first three blueprints, determine the largest number of
+// geodes you could open; then, multiply these three values together."
+int answer = 1;
+var sw = Stopwatch.StartNew();
 foreach (var bp in blueprints)
 {
     var searcher = new Searcher();
     int geodes = searcher.Search(bp, start);
-
-    // "Determine the quality level of each blueprint by multiplying that
-    // blueprint's ID number with the largest number of geodes that can be
-    // opened in 24 minutes using that blueprint."
-    int quality = geodes * bp.Number;
-
-    Console.WriteLine($"best geode count for blueprint {bp.Number} is {geodes} (quality {quality})");
-    qualities += quality;
+    Console.WriteLine($"best geode count for blueprint {bp.Number} is {geodes}");
+    answer *= geodes;
 }
 
-Console.WriteLine($"the total quality is {qualities}");
+Console.WriteLine($"the answer is {answer} (took {sw.Elapsed})");
 
 static IEnumerable<Blueprint> ParseBlueprints(string file)
 {
@@ -62,14 +71,6 @@ static IEnumerable<Blueprint> ParseBlueprints(string file)
             )
         );
 
-#if DEBUG
-    Console.WriteLine($"{blueprints.Count()} blueprints parsed");
-    foreach (var bp in blueprints)
-    {
-        Console.WriteLine(bp);
-    }
-#endif
-
     return blueprints;
 }
 
@@ -100,16 +101,31 @@ class Searcher
             return score;
         }
 
+        // can we afford a geode robot right now?
+        bool canAffordNow = resources.CanAfford(blueprint.GeodeRobotCosts);
+
+        // can we afford one geode robot each and every turn?
+        bool canAffordSustained = robots.CanAfford(blueprint.GeodeRobotCosts);
+
+        // to build a sustained one geode robot a turn we need...
+        var required = blueprint.GeodeRobotCosts.Subtract(robots);
+
+        int obsidianBy = MinimumTurnsTillResource(required.Obsidian, resources.Obsidian, robots.Obsidian);
+        int oreBy = MinimumTurnsTillResource(required.Ore, resources.Ore, robots.Ore);
+        int earliestSustainedBy = Math.Max(obsidianBy, oreBy);
+
         // calculate the best possible score we can get from this position.
+        // this is hopefully the lowest guess we can make without ever underestimating.
         int possible =
             resources.Geode +
-            (timeRemaining * robots.Geode) +             // all geode robots produce one geode every turn
-            ((timeRemaining * (timeRemaining + 1)) / 2); // assume we build a geode robot every turn (very optimistic...)
+            (canAffordNow ? timeRemaining : 0) + // if we build a geode robot now we'll get timeRemaining geodes from it
+            (timeRemaining * robots.Geode) +     // all geode robots produce one geode every turn
+            Sum1N(timeRemaining - earliestSustainedBy);   // assume we build a geode robot every turn
 
         if (possible < best)
         {
-            // we can't possibly beat our best known score. this branch of the
-            // tree can be abandoned.
+            // we can't possibly beat our best known score.
+            // this branch of the tree can be abandoned.
             return int.MinValue;
         }
 
@@ -125,6 +141,31 @@ class Searcher
         memo[state] = max;
 
         return best;
+
+        // assuming we build one robot / turn, the amount of resources produced
+        // by those robots is the sum from 1 to N.
+        //
+        // the robot built on the 1st turn produces one resource multiplied by N turns,
+        // the robot built on the 2nd turn produces one resource multiplied by N-1 turns,
+        // the robot built on the 3rd turn produces one resource multiplied by N-2 turns,
+        // the robot built on the Nth turn produces one resource multiplied by 1 turns.
+        static int Sum1N(int n) => n * (n + 1) / 2;
+
+        // given resources and robots in hand, what is the minimum number of
+        // turns till we can achieve the required resource count?
+        static int MinimumTurnsTillResource(int requiredResource, int startingResource, int startingNumRobots) =>
+            Enumerable
+                .Range(1, int.MaxValue)
+                .Select(turn => (
+                    turn,
+                    totalResource:
+                        startingResource +         // the amount we start with
+                        turn * startingNumRobots + // our robots produce one per turn 
+                        Sum1N(turn)                // assume we build one robot per turn
+                    )
+                )
+                .First(tr => tr.totalResource >= requiredResource)
+                .turn;
     }
 
     private static IEnumerable<State> GenerateSuccessors(Blueprint blueprint, State state)
