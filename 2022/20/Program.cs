@@ -1,75 +1,177 @@
-﻿string file = args.Length == 1 ? args[0] : "eg.txt";
+﻿using System.Diagnostics;
 
-var input = File.ReadLines(file)
-    .Select((line, i) => (num: int.Parse(line), idx: i))
-    .ToArray();
+const int maxPrint = 20;
 
-DebugPrint(input);
+string file = args.Length == 1 ? args[0] : "eg.txt";
 
-Console.WriteLine(new { input.Length });
+var input = File.ReadLines(file).Select(int.Parse);
 
-for (int i = 0; i < input.Length; i++)
+var first = BuildQuadruplyLinkedList(input);
+var originalHead = first;
+var currentHead = first;
+
+#if DEBUG
+Console.WriteLine("initial");
+Console.WriteLine(String.Join(", ", NodesCurrentOrder(currentHead).Take(maxPrint)));
+#endif
+
+var sw = Stopwatch.StartNew();
+foreach (var node in NodesOriginalOrder(originalHead))
 {
-    (int num, int idx) = input[i];
+    int offset = node.Num % input.Count();
 
-    // how many positions to move the number by
-    int move = mod(num, input.Length);
+#if DEBUG
+    Console.WriteLine($"processing {node}; offset: {offset}");
+#endif
 
-    // the index of the position we're moving to
-    int newidx = mod(idx + move, input.Length);
-
-    // BUG BUG BUG negative numbers moving one less than they should
-
-    Console.WriteLine($"moving {input[i].num} at position {input[i].idx} by {move} positions to position {newidx}");
-
-    if (idx != newidx)
+    // remove node from list
+    node.CurrentNext.CurrentPrevious = node.CurrentPrevious;
+    node.CurrentPrevious.CurrentNext = node.CurrentNext;
+    if (node == currentHead)
     {
-        // reindex all numbers in between our start and finish indexes
-        // if the current num is moving up then they all move down, else they all move up
-        (int lower, int upper, int shift) = idx < newidx
-            ? (idx + 1, newidx, -1)
-            : (newidx, idx - 1, +1);
+        currentHead = node.CurrentNext;
+    }
 
-        // Console.WriteLine(new { lower, upper, shift });
+    // reinsert node
+    Node spliceAfter;
+    if (offset > 0)
+    {
+        spliceAfter = ScanForward(node, offset);
+    }
+    else
+    {
+        offset = Math.Abs(offset) + 1; // plus one because we're including ourselves
+        spliceAfter = ScanBackward(node, offset);
+    }
 
-        for (int j = 0; j < input.Length; j++)
+#if DEBUG
+    Console.WriteLine($"splicing in at {spliceAfter.CurrentPrevious} => {spliceAfter} => {node}* => {spliceAfter.CurrentNext}");
+#endif
+
+    // before: splice => splice.next
+    // after:  splice => node => splice.next
+    node.CurrentNext = spliceAfter.CurrentNext;
+    node.CurrentPrevious = spliceAfter;
+    if (spliceAfter.CurrentNext == currentHead)
+    {
+        currentHead = node;
+    }
+    spliceAfter.CurrentNext.CurrentPrevious = node;
+    spliceAfter.CurrentNext = node;
+
+#if DEBUG
+    Console.WriteLine(String.Join(", ", NodesCurrentOrder(currentHead).Take(maxPrint)));
+#endif
+}
+
+var zero = ScanForwardTill(currentHead, value: 0);
+int answer = ScanForwardMany(zero, 1000, 2000, 3000)
+    .Select(n => n.Num)
+    .Aggregate(0, (acc, num) => acc + num);
+
+Console.WriteLine($"the answer is {answer} (took {sw.Elapsed})");
+
+static Node ScanTill(Node node, Func<Node, Node> next, int value)
+{
+    while (true)
+    {
+        if (node.Num == value)
         {
-            if (lower <= input[j].idx && input[j].idx <= upper)
-            {
-                Console.WriteLine($"moving {input[j].num} at position {input[j].idx} to position {input[j].idx + shift}");
-                input[j].idx += shift;
-            }
+            return node;
+        }
+        node = next(node);
+    }
+}
+
+static Node ScanForwardTill(Node node, int value) => ScanTill(node, CurrentNext, value);
+
+static IEnumerable<Node> ScanMany(Node node, Func<Node, Node> next, params int[] offsets)
+{
+    var set = offsets.ToHashSet();
+    for (int i = 0; set.Count() > 0; i++)
+    {
+        if (set.Contains(i))
+        {
+            yield return node;
+            set.Remove(i);
+        }
+        node = next(node);
+    }
+}
+
+static IEnumerable<Node> ScanForwardMany(Node node, params int[] offsets) => ScanMany(node, CurrentNext, offsets);
+
+static Node Scan(Node node, Func<Node, Node> next, int offset)
+{
+    while (offset > 0)
+    {
+        node = next(node);
+        offset--;
+    }
+    return node;
+}
+
+static Node ScanForward(Node node, int offset) => Scan(node, CurrentNext, offset);
+
+static Node ScanBackward(Node node, int offset) => Scan(node, CurrentPrevious, offset);
+
+static IEnumerable<Node> Nodes(Node head, Func<Node, Node> next)
+{
+    var current = head;
+    do
+    {
+        yield return current;
+        current = next(current);
+    } while (current != head);
+}
+
+static IEnumerable<Node> NodesOriginalOrder(Node head) => Nodes(head, OriginalNext);
+
+static IEnumerable<Node> NodesCurrentOrder(Node head) => Nodes(head, CurrentNext);
+
+static Node OriginalNext(Node node) => node.OriginalNext;
+
+static Node CurrentNext(Node node) => node.CurrentNext;
+
+static Node CurrentPrevious(Node node) => node.CurrentPrevious;
+
+static Node BuildQuadruplyLinkedList(IEnumerable<int> input)
+{
+    Node? head = null, tail = null;
+
+    foreach (int num in input)
+    {
+        var node = new Node { Num = num };
+
+        if (head == null)
+        {
+            head = node;
         }
 
-        // move the number to the new position
-        input[i].idx = newidx;
+        if (tail != null)
+        {
+            tail.OriginalNext = tail.CurrentNext = node;
+            node.OriginalPrevious = node.CurrentPrevious = tail;
+        }
+
+        tail = node;
     }
 
-    DebugPrint(input);
+    // setup the list to loop around infinitely
+    // head.previous => tail
+    // tail.next => head
+    head.OriginalPrevious = head.CurrentPrevious = tail;
+    tail.OriginalNext = tail.CurrentNext = head;
+
+    return head;
 }
 
-// https://torstencurdt.com/tech/posts/modulo-of-negative-numbers/
-static int mod(int a, int b) => (((a % b) + b) % b);
-
-static void InvariantOrThrow(IEnumerable<(int num, int idx)> input)
+class Node // a node in a quadruply (!!!) linked list
 {
-    const int max = 10;
-    var expected = Enumerable.Range(0, input.Count());
-    var actual = input.Select(np => np.idx).Order();
-    if (!Enumerable.SequenceEqual(expected, actual))
-    {
-        string ellipsis = expected.Count() > max ? "..." : "";
-        throw new Exception($"expected {String.Join(',', expected.Take(max)) + ellipsis} did not match actual {String.Join(',', actual.Take(max)) + ellipsis}");
-    }
-}
-
-static void DebugPrint(IEnumerable<(int num, int idx)> input)
-{
-#if DEBUG
-    InvariantOrThrow(input);
-
-    var sorted = input.OrderBy(np => np.idx);
-    var nums = sorted.Select(np => np.num);
-    Console.WriteLine(String.Join(", ", nums));
-#endif
+    public Node? OriginalNext { get; set; }
+    public Node? OriginalPrevious { get; set; }
+    public Node? CurrentNext { get; set; }
+    public Node? CurrentPrevious { get; set; }
+    public int Num { get; init; }
+    public override string ToString() => Num.ToString();
 }
