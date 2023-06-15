@@ -18,7 +18,7 @@ Console.WriteLine(String.Join(", ", NodesCurrentOrder(currentHead).Take(maxPrint
 var sw = Stopwatch.StartNew();
 foreach (var node in NodesOriginalOrder(originalHead))
 {
-    int offset = node.Num % input.Count();
+    int offset = node.Num; // % input.Count();
 
 #if DEBUG
     Console.WriteLine($"processing {node}; offset: {offset}");
