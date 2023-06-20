@@ -40,7 +40,7 @@ foreach (var kv in dict)
 // =, which means that it still listens for two numbers (from the same two
 // monkeys as before), but now checks that the two numbers match."
 var rootArithmetic = (ArithmeticOperation)dict[root];
-var rootEquality = (Expression<bool>)new EqualityOperation(root, rootArithmetic.Left, rootArithmetic.Right);
+var rootEquality = new EqualityOperation(root, rootArithmetic.Left, rootArithmetic.Right);
 
 string equationOriginal = rootEquality.ToEquationString();
 Console.WriteLine($"equation (original): {equationOriginal}");
@@ -49,7 +49,7 @@ Console.WriteLine($"equation (original): {equationOriginal}");
 Console.Write(rootEquality.ToTreeString());
 #endif
 
-rootEquality = rootEquality.Simplify();
+rootEquality = (EqualityOperation)rootEquality.Simplify();
 
 string equationSimplified = rootEquality.ToEquationString();
 Console.WriteLine($"equation (simplified): {equationSimplified}");
@@ -57,6 +57,8 @@ Console.WriteLine($"equation (simplified): {equationSimplified}");
 #if DEBUG
 Console.Write(rootEquality.ToTreeString());
 #endif
+
+rootEquality = rootEquality.Balance();
 
 Expression<long> ParseLine(string line)
 {
@@ -96,6 +98,7 @@ interface Expression<T>
     string ToEquationString();
     string ToTreeString(int depth = 0);
     Expression<T> Simplify();
+    int NodeCount();
 }
 
 class ExpressionRef<T>(string id, Expression<T>? expr = null) : Expression<T>
@@ -118,11 +121,15 @@ class ExpressionRef<T>(string id, Expression<T>? expr = null) : Expression<T>
     public T Evaluate() => ifexpr(expr => expr.Evaluate());
 
     public Expression<T> Simplify() => ifexpr(expr => expr.Simplify());
+
+    public int NodeCount() => ifexpr(expr => expr.NodeCount());
 }
 
 class EqualityOperation(string id, ExpressionRef<long> left, ExpressionRef<long> right) : Expression<bool>
 {
     public string ID => id;
+    public ExpressionRef<long> Left => left;
+    public ExpressionRef<long> Right => right;
 
     public override string ToString() => $"{id}: {left.ToString()} = {right.ToString()}";
 
@@ -145,7 +152,7 @@ class EqualityOperation(string id, ExpressionRef<long> left, ExpressionRef<long>
         return sb.ToString();
     }
 
-    public string ToTreeString(int depth)
+    public string ToTreeString(int depth = 0)
     {
         var sb = new StringBuilder();
         sb.AppendLine(new string(' ', depth * 2) + '=');
@@ -153,6 +160,43 @@ class EqualityOperation(string id, ExpressionRef<long> left, ExpressionRef<long>
         sb.Append(right.Expression.ToTreeString(depth + 1));
         return sb.ToString();
     }
+
+    public EqualityOperation Balance()
+    {
+        var current = this;
+        while (current.Left.NodeCount() > 1 || current.Right.NodeCount() > 1)
+        {
+            current = current.BalanceSingle();
+#if DEBUG
+            Console.WriteLine(current.ToEquationString());
+#endif
+        }
+        return current;
+    }
+
+    public EqualityOperation BalanceSingle() => (left.Expression, right.Expression) switch
+    {
+        (ArithmeticOperation left, Number right) => balanceSingle(left, right),
+        // (Number n, ArithmeticOperation ao) => balance(ao, n).Swap(),
+    };
+
+    private EqualityOperation WithLeft(Expression<long> newLeft) => WithLeft(new ExpressionRef<long>(newLeft));
+    private EqualityOperation WithLeft(ExpressionRef<long> newLeft) => new("", newLeft, right);
+    private EqualityOperation WithRight(Expression<long> newRight) => WithRight(new ExpressionRef<long>(newRight));
+    private EqualityOperation WithRight(ExpressionRef<long> newRight) => new("", left, newRight);
+
+    private EqualityOperation balanceSingle(ArithmeticOperation left, Number right) => (left.Op, left.Left.Expression, left.Right.Expression) switch
+    {
+        (Op.Plus, Expression<long> sub, Number addend) => this.WithLeft(sub).WithRight(right.Minus(addend)),
+        (Op.Plus, Number addend, Expression<long> sub) => this.WithLeft(sub).WithRight(right.Minus(addend)),
+        (Op.Divide, Expression<long> sub, Number divisor) => this.WithLeft(sub).WithRight(right.Multiply(divisor)),
+        (Op.Minus, Expression<long> sub, Number subtrahend) => this.WithLeft(sub).WithRight(right.Plus(subtrahend)),
+        (Op.Minus, Number minuend, Expression<long> sub) => this.WithLeft(sub).WithRight(right.Plus(minuend).Negate()),
+        (Op.Multiply, Expression<long> sub, Number multiplier) => this.WithLeft(sub).WithRight(right.Divide(multiplier)),
+        (Op.Multiply, Number multiplier, Expression<long> sub) => this.WithLeft(sub).WithRight(right.Divide(multiplier)),
+    };
+
+    public int NodeCount() => 1 + left.NodeCount() + right.NodeCount();
 }
 
 class ArithmeticOperation(string id, Op op, ExpressionRef<long> left, ExpressionRef<long> right) : Expression<long>
@@ -249,6 +293,8 @@ class ArithmeticOperation(string id, Op op, ExpressionRef<long> left, Expression
             _ => expr,
         };
     }
+
+    public int NodeCount() => 1 + left.NodeCount() + right.NodeCount();
 }
 
 class Number(string id, long num) : Expression<long>
@@ -263,10 +309,18 @@ class Number(string id, long num) : Expression<long>
 
     public Number Negate() => new(id, -1 * num);
 
-    public Expression<long> Multiply(Number multiplier) => new Number(
+    public Number Multiply(Number multiplier) => new Number(
         multiplier.ID + (char)Op.Multiply + this.ID,
         multiplier.Num * this.Num
     );
+
+    public Number Minus(Number subtrahend) => new Number("", this.Num - subtrahend.Num);
+
+    public Number Plus(Number addend) => new Number("", this.Num + addend.Num);
+
+    public Number Divide(Number divisor) => new Number("", this.Num / divisor.Num); // TODO: worry about integer math here?
+
+    public int NodeCount() => 1;
 }
 
 class Variable(string id) : Expression<long>
@@ -284,6 +338,8 @@ class Variable(string id) : Expression<long>
         new ExpressionRef<long>(multiplier),
         new ExpressionRef<long>(this)
     );
+
+    public int NodeCount() => 1;
 }
 
 enum Op { Multiply = '*', Divide = '/', Plus = '+', Minus = '-' };
