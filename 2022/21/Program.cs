@@ -42,17 +42,21 @@ foreach (var kv in dict)
 var rootArithmetic = (ArithmeticOperation)dict[root];
 var rootEquality = (Expression<bool>)new EqualityOperation(root, rootArithmetic.Left, rootArithmetic.Right);
 
+string equationOriginal = rootEquality.ToEquationString();
+Console.WriteLine($"equation (original): {equationOriginal}");
+
 #if DEBUG
 Console.Write(rootEquality.ToTreeString());
 #endif
-
-string equationOriginal = rootEquality.ToEquationString();
-Console.WriteLine($"equation (original): {equationOriginal}");
 
 rootEquality = rootEquality.Simplify();
 
 string equationSimplified = rootEquality.ToEquationString();
 Console.WriteLine($"equation (simplified): {equationSimplified}");
+
+#if DEBUG
+Console.Write(rootEquality.ToTreeString());
+#endif
 
 Expression<long> ParseLine(string line)
 {
@@ -144,7 +148,7 @@ class EqualityOperation(string id, ExpressionRef<long> left, ExpressionRef<long>
     public string ToTreeString(int depth)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(new string(' ', depth * 2) + this.ToString());
+        sb.AppendLine(new string(' ', depth * 2) + '=');
         sb.Append(left.Expression.ToTreeString(depth + 1));
         sb.Append(right.Expression.ToTreeString(depth + 1));
         return sb.ToString();
@@ -154,6 +158,7 @@ class EqualityOperation(string id, ExpressionRef<long> left, ExpressionRef<long>
 class ArithmeticOperation(string id, Op op, ExpressionRef<long> left, ExpressionRef<long> right) : Expression<long>
 {
     public string ID => id;
+    public Op Op => op;
 
     public override string ToString() => $"{id}: {left.ToString()} {(char)op} {right.ToString()}";
 
@@ -171,7 +176,7 @@ class ArithmeticOperation(string id, Op op, ExpressionRef<long> left, Expression
     public string ToTreeString(int depth)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(new string(' ', depth * 2) + this.ToString());
+        sb.AppendLine(new string(' ', depth * 2) + (char)op);
         sb.Append(left.Expression.ToTreeString(depth + 1));
         sb.Append(right.Expression.ToTreeString(depth + 1));
         return sb.ToString();
@@ -190,16 +195,60 @@ class ArithmeticOperation(string id, Op op, ExpressionRef<long> left, Expression
 
     public long Evaluate() => evaluate(left.Evaluate(), right.Evaluate());
 
+    public ArithmeticOperation WithOp(Op newOp) => new(id, newOp, left, right);
     public ArithmeticOperation WithLeft(ExpressionRef<long> newLeft) => new(id, op, newLeft, right);
     public ArithmeticOperation WithRight(ExpressionRef<long> newRight) => new(id, op, left, newRight);
+    public ArithmeticOperation WithLeft(Expression<long> newLeft) => WithLeft(new ExpressionRef<long>(newLeft));
+    public ArithmeticOperation WithRight(Expression<long> newRight) => WithRight(new ExpressionRef<long>(newRight));
 
     public Expression<long> Simplify() => (op, left.Simplify(), right.Simplify()) switch
     {
-        (_, Number x, Number y) => new Number(null, evaluate(x.Num, y.Num)),
-        (_, Number x, _) => this.WithLeft(new ExpressionRef<long>("", x)),
-        (_, _, Number y) => this.WithRight(new ExpressionRef<long>("", y)),
+        (Op op, Number x, Number y) => new Number(left.ID + (char)op + right.ID, evaluate(x.Num, y.Num)),
+        (Op.Multiply, Number n, ArithmeticOperation e) => e.Multiply(n),
+        (Op.Multiply, ArithmeticOperation e, Number n) => e.Multiply(n),
+        (Op.Plus, Number n, ArithmeticOperation e) when e.Op == Op.Plus || e.Op == Op.Minus => e.Plus(n.Num),
+        (Op.Plus, ArithmeticOperation e, Number n) when e.Op == Op.Plus || e.Op == Op.Minus => e.Plus(n.Num),
+        (Op.Minus, Number n, ArithmeticOperation e) when e.Op == Op.Plus || e.Op == Op.Minus => e.Plus(-1 * n.Num),
+        (Op.Minus, ArithmeticOperation e, Number n) when e.Op == Op.Plus || e.Op == Op.Minus => e.Plus(-1 * n.Num),
+        (_, var x, var y) => this.WithLeft(x).WithRight(y),
+    };
+
+    public ArithmeticOperation Plus(long addend) => (
+        (op, left.Expression, right.Expression) switch
+        {
+            (Op.Plus, Number n, _) => this.WithLeft(new Number("", addend + n.Num)),          // (n + x) + a => (a + n) + x
+            (Op.Plus, _, Number n) => this.WithRight(new Number("", addend + n.Num)),         // (x + n) + a => x + (a + n)
+            (Op.Minus, Number n, _) => this.WithLeft(new Number("", addend + n.Num)),         // (n - x) + a => (a + n) - x
+            (Op.Minus, _, Number n) => this.WithRight(new Number("", -1 * (addend - n.Num))), // (x - n) + a => x + (a - n)
+        }
+    ).Canonicalise();
+
+    public ArithmeticOperation Canonicalise() => (op, left.Expression, right.Expression) switch
+    {
+        (Op.Plus, _, Number n) when n.Num < 0 => this.WithOp(Op.Minus).WithRight(n.Negate()),
+        (Op.Minus, _, Number n) when n.Num < 0 => this.WithOp(Op.Plus).WithRight(n.Negate()),
         _ => this,
     };
+
+    public ArithmeticOperation Multiply(Number multiplier)
+    {
+        var l = multiply(left.Expression, multiplier);
+        var r = multiply(right.Expression, multiplier);
+        return new ArithmeticOperation(
+            multiplier.ID + (char)Op.Multiply + this.ID,
+            op,
+            new ExpressionRef<long>(l),
+            new ExpressionRef<long>(r)
+        );
+
+        // TODO: should be able to clean this type switch up with better typing...
+        static Expression<long> multiply(Expression<long> expr, Number multiplier) => expr switch
+        {
+            Number num => num.Multiply(multiplier),
+            Variable var => var.Multiply(multiplier),
+            _ => expr,
+        };
+    }
 }
 
 class Number(string id, long num) : Expression<long>
@@ -210,7 +259,14 @@ class Number(string id, long num) : Expression<long>
     public string ToEquationString() => num.ToString();
     public long Evaluate() => num;
     public Expression<long> Simplify() => this;
-    public string ToTreeString(int depth) => new string(' ', depth * 2) + this.ToString() + "\n";
+    public string ToTreeString(int depth) => new string(' ', depth * 2) + num + "\n";
+
+    public Number Negate() => new(id, -1 * num);
+
+    public Expression<long> Multiply(Number multiplier) => new Number(
+        multiplier.ID + (char)Op.Multiply + this.ID,
+        multiplier.Num * this.Num
+    );
 }
 
 class Variable(string id) : Expression<long>
@@ -220,7 +276,14 @@ class Variable(string id) : Expression<long>
     public long Evaluate() => throw new NotImplementedException("can't evaluate a variable"); // LSP ickiness
     public Expression<long> Simplify() => this;
     public string ToEquationString() => id;
-    public string ToTreeString(int depth) => new string(' ', depth * 2) + this.ToString() + "\n";
+    public string ToTreeString(int depth) => new string(' ', depth * 2) + id + "\n";
+
+    public Expression<long> Multiply(Number multiplier) => new ArithmeticOperation(
+        multiplier.ID + (char)Op.Multiply + this.ID,
+        Op.Multiply,
+        new ExpressionRef<long>(multiplier),
+        new ExpressionRef<long>(this)
+    );
 }
 
 enum Op { Multiply = '*', Divide = '/', Plus = '+', Minus = '-' };
