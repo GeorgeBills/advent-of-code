@@ -43,7 +43,7 @@ var rootArithmetic = (ArithmeticOperation)dict[root];
 var rootEquality = (Expression<bool>)new EqualityOperation(root, rootArithmetic.Left, rootArithmetic.Right);
 
 #if DEBUG
-PrintTree(rootEquality);
+Console.Write(rootEquality.ToTreeString());
 #endif
 
 string equationOriginal = rootEquality.ToEquationString();
@@ -53,17 +53,6 @@ rootEquality = rootEquality.Simplify();
 
 string equationSimplified = rootEquality.ToEquationString();
 Console.WriteLine($"equation (simplified): {equationSimplified}");
-
-void PrintTree<T>(Expression<T> expr, int depth = 0) // FIXME: PrintTree() is broken, put it on the interface
-{
-    Console.WriteLine(new string(' ', depth * 2) + expr);
-
-    if (expr is ArithmeticOperation operation)
-    {
-        PrintTree(operation.Left.Expression, depth + 1);
-        PrintTree(operation.Right.Expression, depth + 1);
-    }
-}
 
 Expression<long> ParseLine(string line)
 {
@@ -101,6 +90,7 @@ interface Expression<T>
     string ID { get; }
     T Evaluate();
     string ToEquationString();
+    string ToTreeString(int depth = 0);
     Expression<T> Simplify();
 }
 
@@ -113,17 +103,17 @@ class ExpressionRef<T>(string id, Expression<T>? expr = null) : Expression<T>
 
     public override string ToString() => id;
 
-    public string ToEquationString() => expr != null
-        ? expr.ToEquationString()
+    private U ifexpr<U>(Func<Expression<T>, U> func) => expr != null
+        ? func(expr)
         : throw new Exception($"expression ref {id} has not been reified");
 
-    public T Evaluate() => expr != null
-        ? expr.Evaluate()
-        : throw new Exception($"expression ref {id} has not been reified");
+    public string ToEquationString() => ifexpr(expr => expr.ToEquationString());
 
-    public Expression<T> Simplify() => expr != null
-        ? expr.Simplify()
-        : throw new Exception($"expression ref {id} has not been reified");
+    public string ToTreeString(int depth) => ifexpr(expr => expr.ToTreeString(depth));
+
+    public T Evaluate() => ifexpr(expr => expr.Evaluate());
+
+    public Expression<T> Simplify() => ifexpr(expr => expr.Simplify());
 }
 
 class EqualityOperation(string id, ExpressionRef<long> left, ExpressionRef<long> right) : Expression<bool>
@@ -150,6 +140,15 @@ class EqualityOperation(string id, ExpressionRef<long> left, ExpressionRef<long>
         sb.Append(')');
         return sb.ToString();
     }
+
+    public string ToTreeString(int depth)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(new string(' ', depth * 2) + this.ToString());
+        sb.Append(left.Expression.ToTreeString(depth + 1));
+        sb.Append(right.Expression.ToTreeString(depth + 1));
+        return sb.ToString();
+    }
 }
 
 class ArithmeticOperation(string id, Op op, ExpressionRef<long> left, ExpressionRef<long> right) : Expression<long>
@@ -166,6 +165,15 @@ class ArithmeticOperation(string id, Op op, ExpressionRef<long> left, Expression
         sb.Append((char)op);
         sb.Append(right.ToEquationString());
         sb.Append(')');
+        return sb.ToString();
+    }
+
+    public string ToTreeString(int depth)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(new string(' ', depth * 2) + this.ToString());
+        sb.Append(left.Expression.ToTreeString(depth + 1));
+        sb.Append(right.Expression.ToTreeString(depth + 1));
         return sb.ToString();
     }
 
@@ -202,6 +210,7 @@ class Number(string id, long num) : Expression<long>
     public string ToEquationString() => num.ToString();
     public long Evaluate() => num;
     public Expression<long> Simplify() => this;
+    public string ToTreeString(int depth) => new string(' ', depth * 2) + this.ToString() + "\n";
 }
 
 class Variable(string id) : Expression<long>
@@ -211,6 +220,7 @@ class Variable(string id) : Expression<long>
     public long Evaluate() => throw new NotImplementedException("can't evaluate a variable"); // LSP ickiness
     public Expression<long> Simplify() => this;
     public string ToEquationString() => id;
+    public string ToTreeString(int depth) => new string(' ', depth * 2) + this.ToString() + "\n";
 }
 
 enum Op { Multiply = '*', Divide = '/', Plus = '+', Minus = '-' };
