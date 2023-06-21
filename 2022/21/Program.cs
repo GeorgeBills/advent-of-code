@@ -20,10 +20,10 @@ foreach (var e in parsed)
 
 var dict = parsed.ToDictionary(p => p.ID, p => p);
 
-// Second, you got the wrong monkey for the job starting with humn:. It isn't a
+// "Second, you got the wrong monkey for the job starting with humn:. It isn't a
 // monkey - it's you. Actually, you got the job wrong, too: you need to figure
 // out what number you need to yell so that root's equality check passes. (The
-// number that appears after humn: in your input is now irrelevant.)
+// number that appears after humn: in your input is now irrelevant.)"
 dict[humn] = new Variable(humn);
 
 foreach (var kv in dict)
@@ -187,13 +187,13 @@ class EqualityOperation(string id, ExpressionRef<long> left, ExpressionRef<long>
 
     private EqualityOperation balanceSingle(ArithmeticOperation left, Number right) => (left.Op, left.Left.Expression, left.Right.Expression) switch
     {
-        (Op.Plus, Expression<long> sub, Number addend) => this.WithLeft(sub).WithRight(right.Minus(addend)),
-        (Op.Plus, Number addend, Expression<long> sub) => this.WithLeft(sub).WithRight(right.Minus(addend)),
-        (Op.Divide, Expression<long> sub, Number divisor) => this.WithLeft(sub).WithRight(right.Multiply(divisor)),
-        (Op.Minus, Expression<long> sub, Number subtrahend) => this.WithLeft(sub).WithRight(right.Plus(subtrahend)),
-        (Op.Minus, Number minuend, Expression<long> sub) => this.WithLeft(sub).WithRight(right.Plus(minuend).Negate()),
-        (Op.Multiply, Expression<long> sub, Number multiplier) => this.WithLeft(sub).WithRight(right.Divide(multiplier)),
-        (Op.Multiply, Number multiplier, Expression<long> sub) => this.WithLeft(sub).WithRight(right.Divide(multiplier)),
+        (Op.Plus, Expression<long> augend, Number addend) => this.WithLeft(augend).WithRight(right.Minus(addend)),
+        (Op.Plus, Number augend, Expression<long> addend) => this.WithLeft(addend).WithRight(right.Minus(augend)),
+        (Op.Divide, Expression<long> dividend, Number divisor) => this.WithLeft(dividend).WithRight(right.Multiply(divisor)),
+        (Op.Minus, Expression<long> minuend, Number subtrahend) => this.WithLeft(minuend).WithRight(right.Plus(subtrahend)),
+        (Op.Minus, Number minuend, Expression<long> subtrahend) => this.WithLeft(subtrahend).WithRight(right.Plus(minuend).Negate()),
+        (Op.Multiply, Expression<long> multiplicand, Number multiplier) => this.WithLeft(multiplicand).WithRight(right.Divide(multiplier)),
+        (Op.Multiply, Number multiplier, Expression<long> multiplicand) => this.WithLeft(multiplicand).WithRight(right.Divide(multiplier)),
     };
 
     public int NodeCount() => 1 + left.NodeCount() + right.NodeCount();
