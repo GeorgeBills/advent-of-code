@@ -60,6 +60,8 @@ Console.Write(rootEquality.ToTreeString());
 
 rootEquality = rootEquality.Balance();
 
+Console.WriteLine(rootEquality.ToEquationString());
+
 Expression<long> ParseLine(string line)
 {
     Match match;
@@ -187,13 +189,13 @@ class EqualityOperation(string id, ExpressionRef<long> left, ExpressionRef<long>
 
     private EqualityOperation balanceSingle(ArithmeticOperation left, Number right) => (left.Op, left.Left.Expression, left.Right.Expression) switch
     {
-        (Op.Plus, Expression<long> augend, Number addend) => this.WithLeft(augend).WithRight(right.Minus(addend)),
-        (Op.Plus, Number augend, Expression<long> addend) => this.WithLeft(addend).WithRight(right.Minus(augend)),
-        (Op.Divide, Expression<long> dividend, Number divisor) => this.WithLeft(dividend).WithRight(right.Multiply(divisor)),
-        (Op.Minus, Expression<long> minuend, Number subtrahend) => this.WithLeft(minuend).WithRight(right.Plus(subtrahend)),
-        (Op.Minus, Number minuend, Expression<long> subtrahend) => this.WithLeft(subtrahend).WithRight(right.Plus(minuend).Negate()),
-        (Op.Multiply, Expression<long> multiplicand, Number multiplier) => this.WithLeft(multiplicand).WithRight(right.Divide(multiplier)),
-        (Op.Multiply, Number multiplier, Expression<long> multiplicand) => this.WithLeft(multiplicand).WithRight(right.Divide(multiplier)),
+        (Op.Plus, Expression<long> augend, Number addend) => this.WithLeft(augend).WithRight(right.Minus(addend)),                          // (x+n = y) => (x = y-n)
+        (Op.Plus, Number augend, Expression<long> addend) => this.WithLeft(addend).WithRight(right.Minus(augend)),                          // (n+x = y) => (x = y-n)
+        (Op.Divide, Expression<long> dividend, Number divisor) => this.WithLeft(dividend).WithRight(right.Multiply(divisor)),               // (x/n = y) => (x = y*n)
+        (Op.Minus, Expression<long> minuend, Number subtrahend) => this.WithLeft(minuend).WithRight(right.Plus(subtrahend)),                // (x-n = y) => (x = y+n)
+        (Op.Minus, Number minuend, Expression<long> subtrahend) => this.WithLeft(subtrahend).WithRight(minuend.Minus(right)),               // (n-x = y) => (x = n-y)
+        (Op.Multiply, Expression<long> multiplicand, Number multiplier) => this.WithLeft(multiplicand).WithRight(right.Divide(multiplier)), // (x*n = y) => (x = y/n)
+        (Op.Multiply, Number multiplier, Expression<long> multiplicand) => this.WithLeft(multiplicand).WithRight(right.Divide(multiplier)), // (n*x = y) => (x = y/n)
     };
 
     public int NodeCount() => 1 + left.NodeCount() + right.NodeCount();
@@ -269,28 +271,50 @@ class ArithmeticOperation(string id, Op op, ExpressionRef<long> left, Expression
 
     public ArithmeticOperation Canonicalise() => (op, left.Expression, right.Expression) switch
     {
-        (Op.Plus, _, Number n) when n.Num < 0 => this.WithOp(Op.Minus).WithRight(n.Negate()),
-        (Op.Minus, _, Number n) when n.Num < 0 => this.WithOp(Op.Plus).WithRight(n.Negate()),
+        (Op.Plus, _, Number n) when n.Num < 0 => this.WithOp(Op.Minus).WithRight(n.Negate()), // x + -n => x - n
+        (Op.Minus, _, Number n) when n.Num < 0 => this.WithOp(Op.Plus).WithRight(n.Negate()), // x - -n => x + n
         _ => this,
     };
 
     public ArithmeticOperation Multiply(Number multiplier)
     {
-        var l = multiply(left.Expression, multiplier);
-        var r = multiply(right.Expression, multiplier);
-        return new ArithmeticOperation(
-            multiplier.ID + (char)Op.Multiply + this.ID,
-            op,
-            new ExpressionRef<long>(l),
-            new ExpressionRef<long>(r)
-        );
+        // n(a + b) => (na + nb)
+        // n(a - b) => (na - nb)
+        if (op == Op.Plus || op == Op.Minus)
+        {
+            var l = multiply(left.Expression, multiplier);
+            var r = multiply(right.Expression, multiplier);
+            return new ArithmeticOperation(
+                multiplier.ID + (char)Op.Multiply + this.ID,
+                op,
+                new ExpressionRef<long>(l),
+                new ExpressionRef<long>(r)
+            );
+        }
+
+        // n(a / b) => na / b
+        if (op == Op.Divide && left.Expression is Number num)
+        {
+            return this.WithLeft(num.Multiply(multiplier));
+        }
+
+        // give up
+        else
+        {
+            return new ArithmeticOperation(
+                "",
+                Op.Multiply,
+                new ExpressionRef<long>(multiplier),
+                new ExpressionRef<long>(this)
+            );
+        }
 
         // TODO: should be able to clean this type switch up with better typing...
         static Expression<long> multiply(Expression<long> expr, Number multiplier) => expr switch
         {
             Number num => num.Multiply(multiplier),
             Variable var => var.Multiply(multiplier),
-            _ => expr,
+            ArithmeticOperation ao => ao.Multiply(multiplier),
         };
     }
 
