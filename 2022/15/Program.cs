@@ -42,15 +42,8 @@ if (point == null)
 int frequency = point.Value.X * 4_000_000 + point.Value.Y;
 Console.WriteLine($"point is at {point} with frequency {frequency} (took {stopwatch.Elapsed})");
 
-const int maxSearchDepth = 10;
-
 Point? Search(Rectangle rect, int depth = 0)
 {
-    if (depth > maxSearchDepth)
-    {
-        return null;
-    }
-
     var circle = searched.FirstOrDefault(circle => circle.Contains(rect));
     if (circle != default)
     {
@@ -64,7 +57,7 @@ Point? Search(Rectangle rect, int depth = 0)
     Console.WriteLine($"searching {rect}");
 #endif
 
-    if (rect.Width <= 1 || rect.Height <= 1)
+    if (rect.Width <= 10 || rect.Height <= 10)
     {
         foreach (var point in rect.Points())
         {
@@ -74,8 +67,10 @@ Point? Search(Rectangle rect, int depth = 0)
                 // we're conservative (rounding radius down) in our "circle
                 // contains rectangle" checks so need to check if any of the
                 // searched circles contain this point before we can return it.
-                Console.WriteLine($"{circle} contains {point}");
-                return null;
+#if DEBUG
+                Console.WriteLine($"{circ} contains {point}");
+#endif
+                continue;
             }
 
             return point; // found it!
@@ -94,8 +89,10 @@ Point? Search(Rectangle rect, int depth = 0)
 
 (Rectangle NW, Rectangle NE, Rectangle SW, Rectangle SE) Split(Rectangle rect)
 {
-    if (rect.Width <= 1 || rect.Height <= 1)
+    if (rect.Width <= 2 || rect.Height <= 2)
     {
+        // make very sure we never return a quadrant of rect that equals rect
+        // if we do then we'll end up infinitely looping
         throw new ArgumentException($"can't split rectangle of height {rect.Height} and width {rect.Width}", nameof(rect));
     }
 
@@ -209,7 +206,7 @@ readonly record struct Rectangle(int MinX, int MinY, int MaxX, int MaxY)
 {
     public int Height { get => MaxY - MinY + 1; }
     public int Width { get => MaxX - MinX + 1; }
-    public int Area { get => Height * Width; }
+    public ulong Area { get => (ulong)Height * (ulong)Width; }
 
     public IEnumerable<Point> Points()
     {
