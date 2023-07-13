@@ -34,14 +34,79 @@ PrintMap(map, position);
  *         55556666
  */
 
-int edgeLength = map.GetLength(1) / 4; // the map is 4 cube faces wide
+/* the map will be either 4x3 or 3x4
+ * it can't be 5 height or width without repeating a face
+ * it's not possible to have the 6 faces in a 3x3 grid
+ * so the longest of the two dimensions should be cleanly divisible by four
+ * and dividing that dimension by four should give us the edge length */
+int height = map.GetLength(0) - 2;
+int width = map.GetLength(1) - 2;
+int longest = Math.Max(height, width);
+int edgeLength = Math.DivRem(longest, 4, out int remainder);
+
+if (remainder != 0)
+{
+    throw new Exception($"unhandled map size; height: {height}; width: {width}");
+}
+
+#if DEBUG
+Console.WriteLine($"edge length is {edgeLength}; height: {height}; width: {width}");
+#endif
+
+var corners = GetPossibleCornerPositions(map, edgeLength)
+    .Select(pos =>
+        {
+            // define a square of tiles around the candidate corner
+            var tiles = new[] {
+                map[pos.Row - 1, pos.Column - 1], // top left
+                map[pos.Row - 1, pos.Column],     // top right
+                map[pos.Row, pos.Column - 1],     // bottom left
+                map[pos.Row, pos.Column],         // bottom right
+            };
+            // var type = tiles.Count(t => t != Tile.Blank) switch
+            // {
+            //     1 => CornerType.Convex,
+            //     2 => CornerType.Edge,
+            //     3 => CornerType.Concave,
+            //     0 or 4 => CornerType.None, // not a corner
+            // };
+            var type = tiles.Select(t => t != Tile.Blank ? 1 : 0).ToArray() switch
+            {
+                [0, 0, 0, 0] => CornerType.None,
+
+                // vertical edges
+                [0, 1, 0, 1] => CornerType.Edge, // right edge
+                [1, 0, 1, 0] => CornerType.Edge, // left edge
+
+                // horizontal edges
+                [0, 0, 1, 1] => CornerType.Edge, // bottom edge
+                [1, 1, 0, 0] => CornerType.Edge, // top edge
+
+                // single non-empty tile: this is a convex corner
+                [0, 0, 0, 1] => CornerType.Convex,
+                [0, 0, 1, 0] => CornerType.Convex,
+                [0, 1, 0, 0] => CornerType.Convex,
+                [1, 0, 0, 0] => CornerType.Convex,
+
+                // single empty tile: this is a concave corner
+                [0, 1, 1, 1] => CornerType.Concave,
+                [1, 0, 1, 1] => CornerType.Concave,
+                [1, 1, 0, 1] => CornerType.Concave,
+                [1, 1, 1, 0] => CornerType.Concave,
+
+            };
+            return new Corner(pos, type);
+        }
+    )
+    .Where(corner => corner.Type != CornerType.None)
+    .ToArray();
 
 // define all the corners for each cube face
 // 1UL is the up left corner of face 1, 6DL is the down left corner of face 6, etc
-var corner1UL = new Position(Row: 0 * edgeLength + 1, Column: 2 * edgeLength + 1);
+var corner1UL = corners[0].Position; // new Position(Row: 0 * edgeLength + 1, Column: 2 * edgeLength + 1);
 var corner1UR = new Position(Row: 0 * edgeLength + 1, Column: 3 * edgeLength);
-var corner2UL = new Position(Row: 1 * edgeLength + 1, Column: 0 * edgeLength + 1);
-var corner3UL = new Position(Row: 1 * edgeLength + 1, Column: 1 * edgeLength + 1);
+var corner2UL = corners[2].Position; // new Position(Row: 1 * edgeLength + 1, Column: 0 * edgeLength + 1);
+var corner3UL = corners[3].Position; // new Position(Row: 1 * edgeLength + 1, Column: 1 * edgeLength + 1);
 var corner4UR = new Position(Row: 1 * edgeLength + 1, Column: 3 * edgeLength);
 var corner2DL = new Position(Row: 2 * edgeLength, Column: 0 * edgeLength + 1);
 var corner3DL = new Position(Row: 2 * edgeLength, Column: 1 * edgeLength + 1);
@@ -50,6 +115,24 @@ var corner6UL = new Position(Row: 2 * edgeLength + 1, Column: 3 * edgeLength + 1
 var corner6UR = new Position(Row: 2 * edgeLength + 1, Column: 4 * edgeLength);
 var corner5DL = new Position(Row: 3 * edgeLength, Column: 2 * edgeLength + 1);
 var corner6DL = new Position(Row: 3 * edgeLength, Column: 3 * edgeLength + 1);
+
+Console.WriteLine(
+    String.Join(
+        Environment.NewLine,
+        new { eq = corner1UL == corners[0].Position, corner1UL, c0 = corners[0] },
+        new { eq = corner1UR == corners[1].Position, corner1UR, c1 = corners[1] },
+        new { eq = corner2UL == corners[2].Position, corner2UL, c2 = corners[2] },
+        new { eq = corner3UL == corners[3].Position, corner3UL, c3 = corners[3] },
+        new { eq = corner4UR == corners[4].Position, corner4UR, c4 = corners[4] },
+        new { eq = corner2DL == corners[5].Position, corner2DL, c5 = corners[5] },
+        new { eq = corner3DL == corners[6].Position, corner3DL, c6 = corners[6] },
+        new { eq = corner5UL == corners[7].Position, corner5UL, c7 = corners[7] },
+        new { eq = corner6UL == corners[8].Position, corner6UL, c8 = corners[8] },
+        new { eq = corner6UR == corners[9].Position, corner6UR, c9 = corners[9] },
+        new { eq = corner5DL == corners[10].Position, corner5DL, c10 = corners[10] },
+        new { eq = corner6DL == corners[11].Position, corner6DL, c11 = corners[11] }
+    )
+);
 
 // define all edges for each cube face
 // each edge is a sequence of positions along that edge
@@ -328,11 +411,27 @@ static Facing ReverseFacing(Facing facing) => facing switch
     Facing.Right => Facing.Left,
 };
 
+// gets the top left tile for any face in the map
+static IEnumerable<Position> GetPossibleCornerPositions(Tile[,] map, int edgeLength)
+{
+    for (int row = 1; row < map.GetLength(0); row += edgeLength)
+    {
+        for (int col = 1; col < map.GetLength(1); col += edgeLength)
+        {
+            yield return new Position(row, col);
+        }
+    }
+}
+
 enum Tile { Blank = ' ', Open = '.', Wall = '#' };
 
 enum Turn { Right = 'R', Left = 'L' };
 
 enum Facing { Up = '^', Down = 'v', Right = '>', Left = '<' };
+
+record Corner(Position Position, CornerType Type);
+
+enum CornerType { Convex, Concave, Edge, None };
 
 record Join(
     IEnumerable<(Position PositionEdge1, Position PositionEdge2)> PositionPairs,
