@@ -9,7 +9,7 @@ PrintElvesDiagram(elves);
 #endif
 
 int round;
-const int rounds = 10;
+const int rounds = 10_000;
 for (round = 1; round <= rounds; round++)
 {
 #if DEBUG
@@ -26,6 +26,7 @@ for (round = 1; round <= rounds; round++)
     if (proposals.Count() == 0)
     {
         Console.WriteLine($"finishing: no elves are proposing a move after {round} rounds");
+        round++;
         break;
     }
 
@@ -43,7 +44,7 @@ for (round = 1; round <= rounds; round++)
 
 int empty = CountEmpty(elves);
 
-Console.WriteLine($"there are {empty} empty ground tiles after {round} rounds");
+Console.WriteLine($"there are {empty} empty ground tiles after {round - 1} rounds");
 
 static IEnumerable<Position> GetElves(char[][] diagram)
 {
@@ -104,8 +105,8 @@ static void PrintElvesDiagram(ISet<Position> elves)
 static int CountEmpty(ISet<Position> elves)
 {
     (int minRow, int maxRow, int minCol, int maxCol) = GetBounding(elves);
-    int height = maxRow - minRow;
-    int width = maxCol - minCol;
+    int height = maxRow - minRow + 1;
+    int width = maxCol - minCol + 1;
     int area = height * width;
     int empty = area - elves.Count();
 
