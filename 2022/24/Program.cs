@@ -38,19 +38,23 @@ var blizzards = ExtractBlizzardOverlay(valley);
 // }
 // #endif
 
-(var path, int minutes, var elapsed, int numexplored) = Search(valley, blizzards, dimensions, start, finish);
+(_, int minutes1, var elapsed1, int numexplored1) = Search(valley, blizzards, dimensions, start, finish);           // start => finish
+(_, int minutes2, var elapsed2, int numexplored2) = Search(valley, blizzards, dimensions, finish, start, minutes1); // finish => start
+(_, int minutes3, var elapsed3, int numexplored3) = Search(valley, blizzards, dimensions, start, finish, minutes2); // start => finish
 
-Console.WriteLine($"took {minutes} minutes to find the finish (took {elapsed} and explored {numexplored} nodes)");
-Console.WriteLine($"path: {String.Join(" => ", path)}");
+var elapsed = elapsed1 + elapsed2 + elapsed3;
+int numexplored = numexplored1 + numexplored2 + numexplored3;
+Console.WriteLine($"took {minutes3} minutes to travel start => finish => start => finish (took {elapsed} and explored {numexplored} nodes)");
 
-#if DEBUG
-foreach (var idxpos in path.Select((pos, i) => (i, pos)))
-{
-    Console.WriteLine();
-    Console.WriteLine($"minute {idxpos.i}");
-    PrintValley(blizzards, start, finish, current: idxpos.pos, dimensions, minute: idxpos.i);
-}
-#endif
+// #if DEBUG
+// Console.WriteLine($"path: {String.Join(" => ", path)}");
+// foreach (var idxpos in path.Select((pos, i) => (i, pos)))
+// {
+//     Console.WriteLine();
+//     Console.WriteLine($"minute {idxpos.i}");
+//     PrintValley(blizzards, start, finish, current: idxpos.pos, dimensions, minute: idxpos.i);
+// }
+// #endif
 
 static Tile[,] ParseInput(string file)
 {
@@ -234,24 +238,22 @@ static IEnumerable<Tile> ContainsBlizzard(Tile[,] blizzards,
     static int modulus(int dividend, int divisor) => ((dividend % divisor) + divisor) % divisor;
 }
 
-static (IEnumerable<Position> path, int minutes, TimeSpan elapsed, int numexplored) Search(Tile[,] valley, Tile[,] blizzards, Dimensions dimensions, Position start, Position finish)
+static (IEnumerable<Position> path, int minutes, TimeSpan elapsed, int numexplored) Search(Tile[,] valley, Tile[,] blizzards, Dimensions dimensions, Position start, Position finish, int startMinutes = 0)
 {
+    Console.WriteLine($"exploring {start} => {finish} @ {startMinutes} minutes");
+
     var sw = Stopwatch.StartNew();
 
     var frontier = new PriorityQueue<SearchNode, int>();
     var initial = new SearchNode(
         position: start,
-        minutes: 0,
+        minutes: startMinutes,
         predecessor: null
     );
-    int estimate = EstimateCost(0, start, finish);
+    int estimate = EstimateCost(startMinutes, start, finish);
     frontier.Enqueue(initial, estimate);
 
-    // the "canonical minute" is the minute modulo the repeat rate. e.g. if the
-    // repeat rate is 123, then the state when we're at (x, y, 123) is the same
-    // as the state when we're at (x, y, 246) and we can stop exploring.
-    int repeats = (dimensions.Rows - 2 * dimensions.Columns - 2);
-    var explored = new HashSet<(Position, int canonicalMinute)>();
+    var explored = new HashSet<(Position, int minutes)>();
 
     int numexplored = 0;
     const int update = 1_000_000;
