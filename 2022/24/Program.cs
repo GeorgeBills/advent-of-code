@@ -1,8 +1,12 @@
-﻿string file = args.Length == 1 ? args[0] : "egsimple.txt";
+﻿using System.Diagnostics;
+
+string file = args.Length == 1 ? args[0] : "egsimple.txt";
 
 var valley = ParseInput(file);
 
+#if DEBUG
 PrintValleyTiles(valley);
+#endif
 
 var dimensions = new Dimensions(valley.GetLength(0), valley.GetLength(1));
 
@@ -23,13 +27,19 @@ if (GetColumnPositions(valley, start.Column).Any(pos => PositionContainsVertical
 
 var blizzards = ExtractBlizzardOverlay(valley);
 
-valley = null; // dead to us
 
-var current = start;
+var sw = Stopwatch.StartNew();
+(var path, int minutes) = Search(valley, blizzards, dimensions, start, finish);
+sw.Stop();
 
-for (int i = 0; i < 6; i++)
+Console.WriteLine($"took {minutes} minutes to find the finish (took {sw.Elapsed})");
+Console.WriteLine($"path: {String.Join(" => ", path)}");
+
+foreach (var idxpos in path.Select((pos, i) => (i, pos)))
 {
-    PrintValley(blizzards, start, finish, current, dimensions, i);
+    Console.WriteLine();
+    Console.WriteLine($"minute {idxpos.i}");
+    PrintValley(blizzards, start, finish, current: idxpos.pos, dimensions, minute: idxpos.i);
 }
 
 static Tile[,] ParseInput(string file)
@@ -117,7 +127,7 @@ static void PrintValley(Tile[,] blizzards,
                         Position finish,
                         Position current,
                         Dimensions dimensions,
-                        int round)
+                        int minute)
 {
     (int rows, int cols) = dimensions;
 
@@ -146,7 +156,7 @@ static void PrintValley(Tile[,] blizzards,
             }
             else
             {
-                var posblizzards = ContainsBlizzard(blizzards, dimensions, pos, round).ToArray();
+                var posblizzards = ContainsBlizzard(blizzards, dimensions, pos, minute).ToArray();
                 draw = posblizzards.Count() switch
                 {
                     0 => (char)Tile.Clear,
@@ -158,52 +168,118 @@ static void PrintValley(Tile[,] blizzards,
         }
         Console.WriteLine();
     }
+}
+
+static IEnumerable<Tile> ContainsBlizzard(Tile[,] blizzards,
+                                          Dimensions dimensions,
+                                          Position pos,
+                                          int minute)
+{
+    // subtract one to account for the missing wall
+    var overlaypos = pos with
+    {
+        Row = pos.Row - 1,
+        Column = pos.Column - 1,
+    };
+
+    // number of rows and columns minus the walls
+    var overlaydimensions = dimensions with
+    {
+        Rows = dimensions.Rows - 2,
+        Columns = dimensions.Columns - 2
+    };
+
+    if (overlaypos.Row < 0 || overlaypos.Row >= overlaydimensions.Rows ||
+        overlaypos.Column < 0 || overlaypos.Column >= overlaydimensions.Columns)
+    {
+        // out of bounds
+        // allowing calls with oob indexes makes calls simpler for the search
+        yield break;
+    }
+
+    int upblizzrow = modulus(overlaypos.Row + minute, overlaydimensions.Rows);
+    if (blizzards[upblizzrow, overlaypos.Column] == Tile.BlizzardUp)
+    {
+        yield return Tile.BlizzardUp;
+    }
+
+    int downblizzrow = modulus(overlaypos.Row - minute, overlaydimensions.Rows);
+    if (blizzards[downblizzrow, overlaypos.Column] == Tile.BlizzardDown)
+    {
+        yield return Tile.BlizzardDown;
+    }
+
+    int leftblizzcol = modulus(overlaypos.Column + minute, overlaydimensions.Columns);
+    if (blizzards[overlaypos.Row, leftblizzcol] == Tile.BlizzardLeft)
+    {
+        yield return Tile.BlizzardLeft;
+    }
+
+    int rightblizzcol = modulus(overlaypos.Column - minute, overlaydimensions.Columns);
+    if (blizzards[overlaypos.Row, rightblizzcol] == Tile.BlizzardRight)
+    {
+        yield return Tile.BlizzardRight;
+    }
 
     static int modulus(int dividend, int divisor) => ((dividend % divisor) + divisor) % divisor;
+}
 
-    static IEnumerable<Tile> ContainsBlizzard(Tile[,] blizzards,
-                                              Dimensions dimensions,
-                                              Position pos,
-                                              int round)
+static (IEnumerable<Position> path, int minutes) Search(Tile[,] valley, Tile[,] blizzards, Dimensions dimensions, Position start, Position finish)
+{
+    var frontier = new PriorityQueue<SearchNode, int>();
+    var initial = new SearchNode(
+        position: start,
+        minutes: 0,
+        predecessor: null
+    );
+    int estimate = EstimateCost(0, start, finish);
+    frontier.Enqueue(initial, estimate);
+
+    int i = 0;
+    const int update = 1_000_000;
+    while (frontier.Count > 0)
     {
-        // number of rows and columns minus the walls
-        var overlaydimensions = dimensions with
-        {
-            Rows = dimensions.Rows - 2,
-            Columns = dimensions.Columns - 2
-        };
+        var explore = frontier.Dequeue();
+        i++;
 
-        // subtract one to account for the missing wall
-        var overlaypos = pos with
+        if (i % update == 0)
         {
-            Row = pos.Row - 1,
-            Column = pos.Column - 1,
-        };
-
-        int upblizzrow = modulus(overlaypos.Row + round, overlaydimensions.Rows);
-        if (blizzards[upblizzrow, overlaypos.Row] == Tile.BlizzardUp)
-        {
-            yield return Tile.BlizzardUp;
+            Console.WriteLine($"exploring {explore.position} @ {explore.minutes} mins ({frontier.Count} nodes in frontier)");
         }
 
-        int downblizzrow = modulus(overlaypos.Row - round, overlaydimensions.Rows);
-        if (blizzards[downblizzrow, overlaypos.Column] == Tile.BlizzardDown)
+        if (explore.position == finish)
         {
-            yield return Tile.BlizzardDown;
+            var current = explore;
+            var path = new List<Position> { };
+            while (current != null)
+            {
+                path.Add(current.position);
+                current = current.predecessor;
+            }
+
+            path.Reverse(); // start => finish
+
+            return (path, explore.minutes);
         }
 
-        int leftblizzcol = modulus(overlaypos.Column + round, overlaydimensions.Columns);
-        if (blizzards[overlaypos.Row, leftblizzcol] == Tile.BlizzardLeft)
-        {
-            yield return Tile.BlizzardLeft;
-        }
+        int nextminute = explore.minutes + 1;
 
-        int rightblizzcol = modulus(overlaypos.Column - round, overlaydimensions.Columns);
-        if (blizzards[overlaypos.Row, rightblizzcol] == Tile.BlizzardRight)
-        {
-            yield return Tile.BlizzardRight;
-        }
+        var candidates = explore.position.NeighboursPlusSelf(dimensions)
+            // filter out the walls
+            .Where(c => valley[c.Row, c.Column] != Tile.Wall)
+            // filter out moving in to a square that WILL contain a blizzard
+            .Where(c => !ContainsBlizzard(blizzards, dimensions, c, nextminute).Any())
+            .Select(c => (
+                Element: new SearchNode(position: c, minutes: nextminute, predecessor: explore),
+                Priority: EstimateCost(nextminute, c, finish))
+            );
+
+        frontier.EnqueueRange(candidates);
     }
+
+    throw new Exception("ran out of paths to explore without finding the finish");
+
+    static int EstimateCost(int current, Position a, Position b) => current + a.ManhattanDistance(b);
 }
 
 enum Tile : ushort
@@ -216,6 +292,36 @@ enum Tile : ushort
     BlizzardRight = '>',
 }
 
-record Position(int Row, int Column);
+record Position(int Row, int Column)
+{
+    public int ManhattanDistance(Position other) =>
+        Math.Abs(this.Row - other.Row) +
+        Math.Abs(this.Column - other.Column);
+
+    public override string ToString() => $"{Row},{Column}";
+
+    public IEnumerable<Position> NeighboursPlusSelf(Dimensions dimensions)
+    {
+        if (Row > 0)
+        {
+            yield return this with { Row = Row - 1 }; // up
+        }
+        if (Row < dimensions.Rows - 1)
+        {
+            yield return this with { Row = Row + 1 }; // down
+        }
+        if (Column > 0)
+        {
+            yield return this with { Column = Column - 1 }; // left
+        }
+        if (Column < dimensions.Columns - 1)
+        {
+            yield return this with { Column = Column + 1 }; // right
+        }
+        yield return this; // self
+    }
+}
 
 record Dimensions(int Rows, int Columns);
+
+record SearchNode(Position position, int minutes, SearchNode? predecessor);
