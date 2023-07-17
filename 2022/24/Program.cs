@@ -27,20 +27,30 @@ if (GetColumnPositions(valley, start.Column).Any(pos => PositionContainsVertical
 
 var blizzards = ExtractBlizzardOverlay(valley);
 
+// the blizzards should periodically repeat
+// int repeats = (dimensions.Rows - 2 * dimensions.Columns - 2);
+// #if DEBUG
+// for (int i = 0; i < 6; i++)
+// {
+//     Console.WriteLine($"minute {i}");
+//     PrintValley(blizzards, start, finish, current: null, dimensions, minute: i * repeats);
+//     Console.WriteLine();
+// }
+// #endif
 
-var sw = Stopwatch.StartNew();
-(var path, int minutes) = Search(valley, blizzards, dimensions, start, finish);
-sw.Stop();
+(var path, int minutes, var elapsed, int numexplored) = Search(valley, blizzards, dimensions, start, finish);
 
-Console.WriteLine($"took {minutes} minutes to find the finish (took {sw.Elapsed})");
+Console.WriteLine($"took {minutes} minutes to find the finish (took {elapsed} and explored {numexplored} nodes)");
 Console.WriteLine($"path: {String.Join(" => ", path)}");
 
+#if DEBUG
 foreach (var idxpos in path.Select((pos, i) => (i, pos)))
 {
     Console.WriteLine();
     Console.WriteLine($"minute {idxpos.i}");
     PrintValley(blizzards, start, finish, current: idxpos.pos, dimensions, minute: idxpos.i);
 }
+#endif
 
 static Tile[,] ParseInput(string file)
 {
@@ -125,7 +135,7 @@ static Tile[,] ExtractBlizzardOverlay(Tile[,] valley)
 static void PrintValley(Tile[,] blizzards,
                         Position start,
                         Position finish,
-                        Position current,
+                        Position? current,
                         Dimensions dimensions,
                         int minute)
 {
@@ -224,8 +234,10 @@ static IEnumerable<Tile> ContainsBlizzard(Tile[,] blizzards,
     static int modulus(int dividend, int divisor) => ((dividend % divisor) + divisor) % divisor;
 }
 
-static (IEnumerable<Position> path, int minutes) Search(Tile[,] valley, Tile[,] blizzards, Dimensions dimensions, Position start, Position finish)
+static (IEnumerable<Position> path, int minutes, TimeSpan elapsed, int numexplored) Search(Tile[,] valley, Tile[,] blizzards, Dimensions dimensions, Position start, Position finish)
 {
+    var sw = Stopwatch.StartNew();
+
     var frontier = new PriorityQueue<SearchNode, int>();
     var initial = new SearchNode(
         position: start,
@@ -235,16 +247,30 @@ static (IEnumerable<Position> path, int minutes) Search(Tile[,] valley, Tile[,] 
     int estimate = EstimateCost(0, start, finish);
     frontier.Enqueue(initial, estimate);
 
-    int i = 0;
+    // the "canonical minute" is the minute modulo the repeat rate. e.g. if the
+    // repeat rate is 123, then the state when we're at (x, y, 123) is the same
+    // as the state when we're at (x, y, 246) and we can stop exploring.
+    int repeats = (dimensions.Rows - 2 * dimensions.Columns - 2);
+    var explored = new HashSet<(Position, int canonicalMinute)>();
+
+    int numexplored = 0;
     const int update = 1_000_000;
     while (frontier.Count > 0)
     {
         var explore = frontier.Dequeue();
-        i++;
+        numexplored++;
 
-        if (i % update == 0)
+        if (explored.Contains((explore.position, explore.minutes)))
         {
-            Console.WriteLine($"exploring {explore.position} @ {explore.minutes} mins ({frontier.Count} nodes in frontier)");
+            // have seen this state before, so stop exploring
+            continue;
+        }
+
+        explored.Add((explore.position, explore.minutes));
+
+        if (numexplored % update == 0)
+        {
+            Console.WriteLine($"exploring {explore.position} @ {explore.minutes} mins ({frontier.Count} nodes in frontier, {sw.Elapsed} elapsed)");
         }
 
         if (explore.position == finish)
@@ -259,7 +285,9 @@ static (IEnumerable<Position> path, int minutes) Search(Tile[,] valley, Tile[,] 
 
             path.Reverse(); // start => finish
 
-            return (path, explore.minutes);
+            sw.Stop();
+
+            return (path, explore.minutes, sw.Elapsed, numexplored);
         }
 
         int nextminute = explore.minutes + 1;
