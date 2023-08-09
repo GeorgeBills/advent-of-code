@@ -24,7 +24,7 @@ long height = 0;
 var sw = Stopwatch.StartNew();
 for (long i = 0; i <= numRocks - 1; i++)
 {
-    Console.WriteLine($"simulating rock {i + 1} out of {numRocks} ({(double)(i + 1) / numRocks:P}; {sw.ElapsedMilliseconds}ms; current height: {height})");
+    Debug.WriteLine($"simulating rock {i + 1} out of {numRocks} ({(double)(i + 1) / numRocks:P}; {sw.ElapsedMilliseconds}ms; current height: {height})");
 
     int shapeidx = (int)(i % shapes.Length);
 
@@ -77,10 +77,33 @@ for (long i = 0; i <= numRocks - 1; i++)
                 // we're zero indexed: a rock piece at Y=0 has a height of 1
                 height = Math.Max(height, rock.MaxY() + 1);
 
-                var state = new State(shapeidx, jetidx, rock.Offset.X);
+                // find the depth for each column
+                // this tracks the "top" (contour?) of our tower and is important for the state
+                // we're only going to repeat a cycle if the top previously seen matches our current top
+                // because if it's different, the next rock might fall in to a different depth
+                // NOT necessarily the depth it fell in to previously
+                var depths = new long?[maxX - minX];
+                for (int x = minX; x < maxX; x++)
+                {
+                    for (long y = height; y > minY; y--)
+                    {
+                        var point = new Point(x, y);
+                        if (occupied.Contains(point))
+                        {
+                            depths[x] = height - y;
+                            break;
+                        }
+                    }
+                }
+
+                var state = new State(shapeidx, jetidx, depths);
                 if (history.TryGetValue(state, out var previous))
                 {
                     Console.WriteLine($"state {state} last seen with height {previous.height} at iteration {previous.i}");
+
+                    // DebugDraw(null, height, occupied);
+                    // var nextshape = shapes[shapeidx + 1];
+                    // DebugDrawRock(nextshape);
 
                     long remaining = numRocks - i;
                     Console.WriteLine($"current height: {height}; current iteration: {i}; {remaining} iterations remaining");
@@ -93,7 +116,7 @@ for (long i = 0; i <= numRocks - 1; i++)
 
                     long skipcycles = remaining / cycles;
                     long skipiterations = skipcycles * cycles;
-                    long add = skipcycles * increases - 1;
+                    long add = skipcycles * increases;
                     long remainder = remaining % cycles;
                     Console.WriteLine($"iterating {skipiterations} more times will add {add} height with {remainder} iterations remaining");
 
@@ -161,11 +184,13 @@ static Shape[] GetRocks() => new[] {
     ),
 };
 
-static void DebugDraw(Rock? rock, int currentHeight, ISet<Point> occupied)
+static void DebugDraw(Rock? rock, long currentHeight, ISet<Point> occupied)
 {
 #if DEBUG
+    const int maxPrintRows = 50;
     long maxY = rock != null ? rock.MaxY() : currentHeight;
-    for (long y = maxY; y >= minY - 1; y--)
+    long toY = Math.Max(minY - 1, currentHeight - maxPrintRows);
+    for (long y = maxY; y >= toY; y--)
     {
         for (long x = minX - 1; x <= maxX + 1; x++)
         {
@@ -184,7 +209,8 @@ static void DebugDraw(Rock? rock, int currentHeight, ISet<Point> occupied)
 
             Console.Write(draw);
         }
-        Console.WriteLine();
+
+        Console.WriteLine($" y = {y}");
     }
     Console.WriteLine();
 #endif
@@ -196,22 +222,47 @@ static void DebugDrawRocks(Shape[] rocks)
     for (int i = 0; i < rocks.Length; i++)
     {
         Console.WriteLine($"rock {i}:");
-        var diagram = rocks[i].ToDiagram();
-        // Y=0 is the bottom so print it last
-        for (int y = diagram.GetLength(0) - 1; y >= 0; y--)
-        {
-            for (int x = 0; x < diagram.GetLength(1); x++)
-            {
-                Console.Write(diagram[y, x]);
-            }
-            Console.WriteLine();
-        }
-        Console.WriteLine();
+        DebugDrawRock(rocks[i]);
     }
 #endif
 }
 
-record State(int shapeidx, int jetidx, long xoffset);
+static void DebugDrawRock(Shape rock)
+{
+#if DEBUG
+    var diagram = rock.ToDiagram();
+    // Y=0 is the bottom so print it last
+    for (int y = diagram.GetLength(0) - 1; y >= 0; y--)
+    {
+        for (int x = 0; x < diagram.GetLength(1); x++)
+        {
+            Console.Write(diagram[y, x]);
+        }
+        Console.WriteLine();
+    }
+    Console.WriteLine();
+#endif
+}
+
+record State(int shapeidx, int jetidx, long?[] depths)
+{
+    public virtual bool Equals(State? other)
+        => other != null &&
+           this.shapeidx == other.shapeidx &&
+           this.jetidx == other.jetidx &&
+           Enumerable.SequenceEqual(this.depths, other.depths);
+
+    public override int GetHashCode()
+    {
+        int hc = 0;
+        hc = HashCode.Combine(hc, this.shapeidx);
+        hc = HashCode.Combine(hc, this.jetidx);
+        hc = depths.Aggregate(hc, (hc, height) => HashCode.Combine(hc, height));
+        return hc;
+    }
+
+    public override string ToString() => $"shapeidx = {shapeidx}, jetidx = {jetidx}, depths = {String.Join(',', depths)}";
+}
 
 record Rock(Shape Shape, Vector Offset)
 {
