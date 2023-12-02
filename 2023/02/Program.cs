@@ -12,10 +12,20 @@ const int MaxBlue = 14;
 string file = args.Length >= 1 ? args[0] : "eg.txt";
 
 var games = File.ReadAllLines(file).Select(line => ParseGame(line)).ToArray();
-var possible = games.Where(g => g.IsPossible(MaxRed, MaxGreen, MaxBlue));
-int answer = possible.Select(g => g.ID).Sum();
 
-Console.WriteLine($"{possible.Count()} games are possible; the sum of their IDs is {answer}");
+// part 1
+{
+    var max = new Set(Red: MaxRed, Green: MaxGreen, Blue: MaxBlue);
+    var possible = games.Where(g => g.IsPossible(max));
+    int answer = possible.Select(g => g.ID).Sum();
+    Console.WriteLine($"{possible.Count()} games are possible; the sum of their IDs is {answer}");
+}
+
+// part 2
+{
+    int answer = games.Select(g => g.Minimum()).Select(min => min.Power()).Sum();
+    Console.WriteLine($"the sum of the games powers is {answer}");
+}
 
 static Set ParseSet(string str)
 {
@@ -48,14 +58,29 @@ static Game ParseGame(string str)
     return new Game(id, sets);
 }
 
-record Set(int Red, int Green, int Blue)
+record Set(int Red = 0, int Green = 0, int Blue = 0)
 {
     public override string ToString() => $"{Red} red, {Green} green, {Blue} blue";
-    public bool IsPossible(int MaxRed, int MaxGreen, int MaxBlue) => Red <= MaxRed && Green <= MaxGreen && Blue <= MaxBlue;
+
+    public bool IsPossible(Set Max) => Red <= Max.Red && Green <= Max.Green && Blue <= Max.Blue;
+
+    // "The power of a set of cubes is equal to the numbers of red, green, and blue cubes multiplied together."
+    public int Power() => Red * Green * Blue;
 }
 
 record Game(int ID, IEnumerable<Set> Sets)
 {
     public override string ToString() => $"game {ID}: {string.Join("; ", Sets)}";
-    public bool IsPossible(int MaxRed, int MaxGreen, int MaxBlue) => Sets.All(s => s.IsPossible(MaxRed, MaxGreen, MaxBlue));
+
+    public bool IsPossible(Set Max) => Sets.All(s => s.IsPossible(Max));
+
+    public Set Minimum() => 
+        Sets.Aggregate(
+            new Set(),
+            (acc, set) => acc with { 
+                Red = Math.Max(acc.Red, set.Red), 
+                Green = Math.Max(acc.Green, set.Green),
+                Blue = Math.Max(acc.Blue, set.Blue),
+            }
+        );
 }
