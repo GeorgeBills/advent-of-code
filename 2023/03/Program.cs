@@ -35,13 +35,7 @@ for (int row = 0; row < schematic.GetLength(0); row++)
         else if (previous == State.Number)
         {
             // end of a number; record it in our dictionary
-            int endCol = col - 1;
-            var num = new Number(n, row, startCol, endCol);
-            for (int i = startCol; i <= endCol; i++)
-            {
-                var coord = new Coordinate(row, i);
-                numbers[coord] = num;
-            }
+            AddNumber(n, row, startCol, endCol: col - 1);
         }
 
         if (current == State.Symbol) // a symbol
@@ -58,20 +52,37 @@ for (int row = 0; row < schematic.GetLength(0); row++)
         previous = current;
     }
     // end of a row: reset state
+    if (previous == State.Number)
+    {
+        AddNumber(n, row, startCol, endCol: schematic.GetLength(1) - 1);
+    }
+
     n = 0;
     previous = State.Blank;
+
+    void AddNumber(int n, int row, int startCol, int endCol)
+    {
+        var num = new Number(n, row, startCol, endCol);
+        for (int i = startCol; i <= endCol; i++)
+        {
+            var coord = new Coordinate(row, i);
+            numbers[coord] = num;
+        }
+    }
 }
 
 PrintNumbers(numbers);
+PrintNumbersGrid(numbers, height: schematic.GetLength(0), width: schematic.GetLength(1));
 PrintSymbols(symbols);
+PrintSymbolsGrid(symbols, height: schematic.GetLength(0), width: schematic.GetLength(1));
 
 // get all of the coordinates that neighbour a symbol
 var neighbours = symbols.SelectMany(coord => coord.Neighbours(MaxRow: schematic.GetLength(0) - 1, MaxCol: schematic.GetLength(1) - 1)).Distinct();
 
 // get all of the part numbers in the coordinates we care about and sum them
-int answer = neighbours.Select(want => numbers.GetValueOrDefault(want)).Where(num => num != null).Cast<Number>().Distinct().Select(num => num.N).Sum();
+var parts = neighbours.Select(coord => numbers.GetValueOrDefault(coord)).OfType<Number>().Distinct().Select(num => num.N);
 
-Console.WriteLine($"the sum of the part numbers is {answer}");
+Console.WriteLine($"the sum of the part numbers is {parts.Sum()}");
 
 static int ToDigit(char c) => c - '0';
 
@@ -91,17 +102,21 @@ static char[,] ParseGrid(string file)
     return grid;
 }
 
-static void PrintGrid(char[,] grid)
+static void PrintGridFunc(int height, int width, Func<Coordinate, char> printfunc)
 {
-    for (int row = 0; row < grid.GetLength(0); row++)
+    for (int row = 0; row < height; row++)
     {
-        for (int col = 0; col < grid.GetLength(1); col++)
+        for (int col = 0; col < width; col++)
         {
-            Console.Write(grid[row, col]);
+            var coord = new Coordinate(row, col);
+            char c = printfunc(coord);
+            Console.Write(c);
         }
         Console.WriteLine();
     }
 }
+
+static void PrintGrid(char[,] grid) => PrintGridFunc(height: grid.GetLength(0), width: grid.GetLength(1), coord => grid[coord.Row, coord.Col]);
 
 static void PrintNumbers(Dictionary<Coordinate, Number> numbers)
 {
@@ -111,6 +126,8 @@ static void PrintNumbers(Dictionary<Coordinate, Number> numbers)
     }
 }
 
+static void PrintNumbersGrid(Dictionary<Coordinate, Number> numbers, int height, int width) => PrintGridFunc(height, width, coord => numbers.ContainsKey(coord) ? 'N' : '.');
+
 static void PrintSymbols(HashSet<Coordinate> symbols)
 {
     foreach (var coord in symbols)
@@ -118,6 +135,8 @@ static void PrintSymbols(HashSet<Coordinate> symbols)
         Console.WriteLine(coord);
     }
 }
+
+static void PrintSymbolsGrid(HashSet<Coordinate> symbols, int height, int width) => PrintGridFunc(height, width, coord => symbols.Contains(coord) ? '#' : '.');
 
 enum State { Number, Symbol, Blank };
 
