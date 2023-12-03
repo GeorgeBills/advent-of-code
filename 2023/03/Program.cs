@@ -36,17 +36,13 @@ for (int row = 0; row < schematic.GetLength(0); row++)
         {
             // end of a number; record it in our dictionary
             AddNumber(n, row, startCol, endCol: col - 1);
+            n = 0;
         }
 
         if (current == State.Symbol) // a symbol
         {
             var coord = new Coordinate(row, col);
             symbols.Add(coord);
-        }
-
-        if (current == State.Blank)
-        {
-            n = 0;
         }
 
         previous = current;
