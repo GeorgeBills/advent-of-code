@@ -5,7 +5,7 @@ char[,] schematic = ParseGrid(file);
 PrintGrid(schematic);
 
 var numbers = new Dictionary<Coordinate, Number>();
-var symbols = new HashSet<Coordinate>();
+var symbols = new Dictionary<Coordinate, char>();
 
 int n = 0, startCol = 0;
 var previous = State.Blank;
@@ -42,7 +42,7 @@ for (int row = 0; row < schematic.GetLength(0); row++)
         if (current == State.Symbol) // a symbol
         {
             var coord = new Coordinate(row, col);
-            symbols.Add(coord);
+            symbols[coord] = c;
         }
 
         previous = current;
@@ -67,18 +67,60 @@ for (int row = 0; row < schematic.GetLength(0); row++)
     }
 }
 
-PrintNumbers(numbers);
+PrintDictionary(numbers);
 PrintNumbersGrid(numbers, height: schematic.GetLength(0), width: schematic.GetLength(1));
-PrintSymbols(symbols);
+PrintDictionary(symbols);
 PrintSymbolsGrid(symbols, height: schematic.GetLength(0), width: schematic.GetLength(1));
 
-// get all of the coordinates that neighbour a symbol
-var neighbours = symbols.SelectMany(coord => coord.Neighbours(MaxRow: schematic.GetLength(0) - 1, MaxCol: schematic.GetLength(1) - 1)).Distinct();
+// part one
+{
+    // get all of the coordinates that neighbour a symbol
+    var neighbours = symbols.Keys
+        .SelectMany(coord => coord.Neighbours(MaxRow: schematic.GetLength(0) - 1, MaxCol: schematic.GetLength(1) - 1))
+        .Distinct();
 
-// get all of the part numbers in the coordinates we care about and sum them
-var parts = neighbours.Select(coord => numbers.GetValueOrDefault(coord)).OfType<Number>().Distinct().Select(num => num.N);
+    // get all of the part numbers in the coordinates we care about and sum them
+    var parts = neighbours
+        .Select(coord => numbers.GetValueOrDefault(coord))
+        .OfType<Number>()
+        .Distinct()
+        .Select(num => num.N);
 
-Console.WriteLine($"the sum of the part numbers is {parts.Sum()}");
+    Console.WriteLine($"the sum of the part numbers is {parts.Sum()}");
+}
+
+// part two
+{
+    // get all of the "gear" (*) symbols
+    var gears = symbols
+        .Where(kv => kv.Value == '*')
+        .Select(kv => kv.Key);
+
+    Console.WriteLine($"there are {gears.Count()} gears");
+
+    // calculate all of the gear ratios
+    var ratios = gears
+        // for each gear, get numbers adjacent to that gear
+        .Select(coord =>
+            coord
+                // coordinates adjacent to a gear
+                .Neighbours(MaxRow: schematic.GetLength(0) - 1, MaxCol: schematic.GetLength(1) - 1)
+                // numbers covering one of those coordinates
+                .Select(neighbour => numbers.GetValueOrDefault(neighbour))
+                // filter out nulls (no number in the coordinate we checked)
+                .OfType<Number>()
+                // possible / probable that one number will cover many coordinates
+                .Distinct()
+        )
+        // "...that is adjacent to exactly two part numbers"
+        .Where(nums => nums.Count() == 2)
+        // convert to an array (so we can index into it) of integers (so we can multiply)
+        .Select(nums => nums.Select(num => num.N).ToArray())
+        // "gear ratio is the result of multiplying those two numbers together"
+        .Select(nums => nums[0] * nums[1]);
+
+    Console.WriteLine($"the sum of all the gear ratios is {ratios.Sum()}");
+}
 
 static int ToDigit(char c) => c - '0';
 
@@ -114,7 +156,7 @@ static void PrintGridFunc(int height, int width, Func<Coordinate, char> printfun
 
 static void PrintGrid(char[,] grid) => PrintGridFunc(height: grid.GetLength(0), width: grid.GetLength(1), coord => grid[coord.Row, coord.Col]);
 
-static void PrintNumbers(Dictionary<Coordinate, Number> numbers)
+static void PrintDictionary<T>(Dictionary<Coordinate, T> numbers)
 {
     foreach (var kv in numbers)
     {
@@ -124,15 +166,7 @@ static void PrintNumbers(Dictionary<Coordinate, Number> numbers)
 
 static void PrintNumbersGrid(Dictionary<Coordinate, Number> numbers, int height, int width) => PrintGridFunc(height, width, coord => numbers.ContainsKey(coord) ? 'N' : '.');
 
-static void PrintSymbols(HashSet<Coordinate> symbols)
-{
-    foreach (var coord in symbols)
-    {
-        Console.WriteLine(coord);
-    }
-}
-
-static void PrintSymbolsGrid(HashSet<Coordinate> symbols, int height, int width) => PrintGridFunc(height, width, coord => symbols.Contains(coord) ? '#' : '.');
+static void PrintSymbolsGrid(Dictionary<Coordinate, char> symbols, int height, int width) => PrintGridFunc(height, width, coord => symbols.ContainsKey(coord) ? '#' : '.');
 
 enum State { Number, Symbol, Blank };
 
