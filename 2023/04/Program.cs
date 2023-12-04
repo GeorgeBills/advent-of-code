@@ -2,13 +2,41 @@
 
 string file = args.Length >= 1 ? args[0] : "eg.txt";
 
-int points =
-    File.ReadAllLines(file).Select(ParseCard)
-    .Select(card => CountWinningNumbers(card.winning, card.have))
-    .Select(n => CalculatePoints(n))
-    .Sum();
+var cards = File.ReadAllLines(file).Select(ParseCard).ToArray();
+var matches = cards.Select(card => CountMatchingNumbers(card.winning, card.have)).ToArray();
 
-Console.WriteLine($"the cards are worth {points} total points");
+// part one
+{
+    int points = matches.Select(n => CalculatePoints(n)).Sum();
+    Console.WriteLine($"the cards are worth {points} total points");
+}
+
+// part two
+{
+    int[] copies = new int[matches.Length];
+    Array.Fill(copies, 1);
+
+    for (int i = 0; i < matches.Length; i++)
+    {
+        int m = matches[i];
+
+#if DEBUG
+        Console.WriteLine($"card {i + 1} wins {m} copies");
+#endif
+
+        while (m > 0)
+        {
+            copies[i + m] += copies[i];
+            m--;
+        }
+    }
+
+#if DEBUG
+    Console.WriteLine(string.Join(',', copies));
+#endif
+
+    Console.WriteLine($"there are {copies.Sum()} total cards");
+}
 
 static Card ParseCard(string str)
 {
@@ -30,7 +58,7 @@ static Card ParseCard(string str)
     return new Card(winning, have);
 }
 
-static int CountWinningNumbers(ISet<int> winning, ISet<int> have) => have.Count(h => winning.Contains(h));
+static int CountMatchingNumbers(ISet<int> winning, ISet<int> have) => have.Intersect(winning).Count();
 
 static int CalculatePoints(int n) => n > 0 ? (int)Math.Pow(2, n - 1) : 0;
 
