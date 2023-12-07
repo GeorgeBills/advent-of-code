@@ -20,30 +20,45 @@ const int Cards = 13;
 static Strength Evaluate((int, int, int, int, int) hand)
 {
     Span<int> counts = stackalloc int[Cards];
-    counts[hand.Item1 - 2]++;
-    counts[hand.Item2 - 2]++;
-    counts[hand.Item3 - 2]++;
-    counts[hand.Item4 - 2]++;
-    counts[hand.Item5 - 2]++;
+    counts[hand.Item1 - 1]++;
+    counts[hand.Item2 - 1]++;
+    counts[hand.Item3 - 1]++;
+    counts[hand.Item4 - 1]++;
+    counts[hand.Item5 - 1]++;
 
     int have2 = 0;
     int have3 = 0;
-    for (int i = 0; i < Cards; i++)
+    int have4 = 0;
+    for (int i = 1; i < Cards; i++)
     {
         if (counts[i] == 5) { return Strength.Kind5; }
-        if (counts[i] == 4) { return Strength.Kind4; }
+        if (counts[i] == 4) { have4++; continue; }
         if (counts[i] == 3) { have3++; continue; }
         if (counts[i] == 2) { have2++; continue; }
     }
 
-    return (have2, have3) switch
+    int jokers = counts[0];
+    return (jokers, have2, have3, have4) switch
     {
-        (1, 1) => Strength.House,
-        (1, 0) => Strength.Pair1,
-        (2, 0) => Strength.Pair2,
-        (0, 0) => Strength.High,
-        (0, 1) => Strength.Kind3,
-        _ => throw new Exception(), // impossible
+        (0, 0, 0, 0) => Strength.High,
+        (0, 0, 0, 1) => Strength.Kind4,
+        (0, 0, 1, 0) => Strength.Kind3,
+        (0, 1, 0, 0) => Strength.Pair1,
+        (0, 1, 1, 0) => Strength.House,
+        (0, 2, 0, 0) => Strength.Pair2,
+        (1, 0, 0, 0) => Strength.Pair1,
+        (1, 0, 0, 1) => Strength.Kind5,
+        (1, 0, 1, 0) => Strength.Kind4,
+        (1, 1, 0, 0) => Strength.Kind3,
+        (1, 2, 0, 0) => Strength.House,
+        (2, 0, 0, 0) => Strength.Kind3,
+        (2, 0, 1, 0) => Strength.Kind5,
+        (2, 1, 0, 0) => Strength.Kind4,
+        (3, 0, 0, 0) => Strength.Kind4,
+        (3, 1, 0, 0) => Strength.Kind5,
+        (4, 0, 0, 0) => Strength.Kind5,
+        (5, 0, 0, 0) => Strength.Kind5,
+        _ => throw new ArgumentException($"unhandled hand: {hand}"),
     };
 }
 
@@ -63,11 +78,11 @@ static (int, int, int, int, int) ParseHand(string str) => (
     ParseCard(str[4])
 );
 
+const int J = 1;
 const int T = 10;
-const int J = 11;
-const int Q = 12;
-const int K = 13;
-const int A = 14;
+const int Q = 11;
+const int K = 12;
+const int A = 13;
 
 static int ParseCard(char c) => c switch
 {
