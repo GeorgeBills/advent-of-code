@@ -21,35 +21,62 @@ foreach (var node in nodesarr)
     nodesdict[id].R = nodesdict[r];
 }
 
-uint step = 0;
-var currents = nodesdict.Values.Where(n => n.ID.EndsWith(startch)).ToArray();
+var starts = nodesdict.Values.Where(n => n.ID.EndsWith(startch)).ToArray();
+var cycles = new Dictionary<Node, int>();
 
-PrintNodes(step, currents);
-
-while (!currents.All(n => n.ID.EndsWith(endch)))
+foreach (var start in starts)
 {
-    uint lridx = (uint)(step % lrs.Length);
-    var lr = lrs[lridx];
+    int step = 0;
+    var current = start;
+    var seen = new Dictionary<(Node, int lridx), int>();
 
-    for (int i = 0; i < currents.Length; i++)
+    while (true)
     {
-        var current = currents[i];
-        var next = lr switch { LR.L => current.L, LR.R => current.R };
-        currents[i] = next;
-    }
+        int lridx = (int)(step % lrs.Length);
+        var lr = lrs[lridx];
+        current = lr switch { LR.L => current.L, LR.R => current.R };
 
-    step++;
+        step++;
 
-    if (step < 100 || step % 1_000_000 == 0)
-    {
-        PrintNodes(step, currents);
+        if (current.ID.EndsWith(endch))
+        {
+            Console.WriteLine($"{start} (step {step}): finds {current} after {step} total steps");
+        }
+
+        var key = (current, lridx);
+
+        if (seen.TryGetValue(key, out int when))
+        {
+            Console.WriteLine($"{start} (step {step}): last saw {key} at step {when} (cycle length: {step - when} steps)");
+            cycles[start] = step - when; // happily the same thing as the depth to z
+            break;
+        }
+
+        seen.TryAdd(key, step);
     }
 }
 
-PrintNodes(step, currents);
+// every path will both (a) find a z node after n steps and (b) cycle every n steps
+// e.g. from the example path 1 finds its z node every 2 steps and path 2 finds its z node every 3 steps
+// so all paths will simultaneously find their z node after the least common multiple of their cycle length
+// e.g. from the example the least common multiple of 2 and 3 is 6
+// this wouldn't be true if the cycle length wasn't the same as the distance to z 
+ulong lcm = cycles.Values.Aggregate(1UL, (a, b) => LeastCommonMultiple((ulong)a, (ulong)b));
+Console.WriteLine($"all positions will be at z nodes after {lcm} steps");
 
-static void PrintNodes(uint step, Node[] currents) =>
-    Console.WriteLine($"{step,13:N0}: {string.Join(' ', currents.ToArray<object>())}");
+ulong GreatestCommonDivisor(ulong a, ulong b) // https://en.wikipedia.org/wiki/Euclidean_algorithm
+{
+    ulong tmp;
+    while (b != 0)
+    {
+        tmp = b;
+        b = a % b;
+        a = tmp;
+    }
+    return a;
+}
+
+ulong LeastCommonMultiple(ulong a, ulong b) => a * b / GreatestCommonDivisor(a, b);
 
 enum LR { L, R };
 
