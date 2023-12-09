@@ -2,10 +2,10 @@
 
 var input = File.ReadAllLines(file);
 
-var lr = input.First().Select(c => c switch { 'L' => LR.L, 'R' => LR.R }).ToArray();
+var lrs = input.First().Select(c => c switch { 'L' => LR.L, 'R' => LR.R }).ToArray();
 
-const string start = "AAA";
-const string end = "ZZZ";
+const char startch = 'A';
+const char endch = 'Z';
 
 var nodesarr = input
     .Skip(2)
@@ -22,16 +22,34 @@ foreach (var node in nodesarr)
 }
 
 uint step = 0;
-var current = nodesdict[start];
-do
+var currents = nodesdict.Values.Where(n => n.ID.EndsWith(startch)).ToArray();
+
+PrintNodes(step, currents);
+
+while (!currents.All(n => n.ID.EndsWith(endch)))
 {
-    Console.WriteLine(current.ID);
+    uint lridx = (uint)(step % lrs.Length);
+    var lr = lrs[lridx];
 
-    current = lr[step % lr.Length] switch { LR.L => current.L, LR.R => current.R };
+    for (int i = 0; i < currents.Length; i++)
+    {
+        var current = currents[i];
+        var next = lr switch { LR.L => current.L, LR.R => current.R };
+        currents[i] = next;
+    }
+
     step++;
-} while (current!.ID != end);
 
-Console.WriteLine($"reached {current.ID} after {step} steps");
+    if (step < 100 || step % 1_000_000 == 0)
+    {
+        PrintNodes(step, currents);
+    }
+}
+
+PrintNodes(step, currents);
+
+static void PrintNodes(uint step, Node[] currents) =>
+    Console.WriteLine($"{step,13:N0}: {string.Join(' ', currents.ToArray<object>())}");
 
 enum LR { L, R };
 
@@ -40,4 +58,5 @@ class Node
     public string? ID { get; init; }
     public Node? L { get; set; }
     public Node? R { get; set; }
+    public override string ToString() => ID;
 }
