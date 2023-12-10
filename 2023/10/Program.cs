@@ -1,9 +1,10 @@
-const string file = "in.txt";
+﻿const string file = "egpart2large.txt";
 
 var tiles = ParseTiles(file);
 
 PrintTileGrid(tiles);
 
+// part one
 var start = FindStart(tiles);
 
 var depths = Search(tiles, start);
@@ -13,6 +14,13 @@ PrintDepthGrid(depths);
 int max = MaxDepth(depths);
 
 Console.WriteLine($"the furthest point from the start is {max} tiles away");
+
+// part two
+var explored = MarkExplored(depths);
+
+FloodFill(explored);
+
+PrintExploredGrid(explored);
 
 static Tile[,] ParseTiles(string file)
 {
@@ -149,9 +157,104 @@ static int MaxDepth(int?[,] depths)
     return max;
 }
 
+static OutsideInside[,] MarkExplored(int?[,] depths)
+{
+    // build this grid with a sentinel gap around the border
+    // this makes it trivial to find an unfilled gap on the exterior
+
+    var (height, width) = (
+        depths.GetLength(0) + 2,
+        depths.GetLength(1) + 2
+    );
+
+    var explored = new OutsideInside[height, width];
+
+    // // mark left / right borders as outside
+    // for (int row = 0; row < height; row++)
+    // {
+    //     explored[row, 0] = OutsideInside.Outside;
+    //     explored[row, width - 1] = OutsideInside.Outside;
+    // }
+
+    // // mark top / bottom borders as outside
+    // for (int col = 0; col < width; col++)
+    // {
+    //     explored[0, col] = OutsideInside.Outside;
+    //     explored[height - 1, col] = OutsideInside.Outside;
+    // }
+
+    for (int row = 0; row < height; row++)
+    {
+        for (int col = 0; col < width; col++)
+        {
+            explored[row, col] = row > 0 && col > 0 && row < height - 1 && col < width - 1 && depths[row - 1, col - 1] != null
+                ? OutsideInside.Loop
+                : OutsideInside.Unknown;
+        }
+    }
+
+    return explored;
+}
+
+static void FloodFill(OutsideInside[,] explored)
+{
+    var (height, width) = (explored.GetLength(0), explored.GetLength(1));
+
+    var start = (0, 0); // arbitrary: any tile in the sentinel boundary is exterior
+
+    var frontier = new Queue<(int row, int col)>();
+
+    frontier.Enqueue(start);
+
+    while (frontier.TryDequeue(out var next))
+    {
+        var (row, col) = next;
+
+        explored[row, col] = OutsideInside.Outside;
+
+        var neighbours = ConnectedNeighbours(next, explored);
+
+        foreach (var neighbour in neighbours)
+        {
+            var (nrow, ncol) = neighbour;
+            if (explored[nrow, ncol] == OutsideInside.Unknown)
+            {
+                frontier.Enqueue(neighbour);
+            }
+        }
+    }
+
+    static IEnumerable<(int row, int col)> ConnectedNeighbours((int, int) next, OutsideInside[,] explored)
+    {
+        // TODO: how to connect through touching pipes?!
+        //       "squeezing between pipes is also allowed"
+        var (height, width) = (explored.GetLength(0), explored.GetLength(1));
+        var (row, col) = next;
+
+        if (row != 0 && explored[row - 1, col] == OutsideInside.Unknown)
+        {
+            yield return (row - 1, col); // north
+        }
+        if (row < height - 1 && explored[row + 1, col] == OutsideInside.Unknown)
+        {
+            yield return (row + 1, col); // south
+        }
+        if (col < width - 1 && explored[row, col + 1] == OutsideInside.Unknown)
+        {
+            yield return (row, col + 1); // east
+        }
+        if (col != 0 && explored[row, col - 1] == OutsideInside.Unknown)
+        {
+            yield return (row, col - 1); // west
+        }
+    }
+}
+
 static void PrintTileGrid(Tile[,] tiles) => PrintGrid(tiles, (rowcol) => { var (row, col) = rowcol; return (char)tiles[row, col]; });
 
 static void PrintDepthGrid(int?[,] depths) => PrintGrid(depths, (rowcol) => { var (row, col) = rowcol; return DepthChar(depths[row, col]); });
+
+static void PrintExploredGrid(OutsideInside[,] explored) => PrintGrid(explored, (rowcol) => { var (row, col) = rowcol; return (char)explored[row, col]; });
 
 static char DepthChar(int? depth) => depth switch
 {
@@ -188,3 +291,5 @@ enum Tile
     SW = '7',
     SE = 'F',
 }
+
+enum OutsideInside { Unknown = '?', Loop = '.', Outside = 'O', Inside = 'I' }
