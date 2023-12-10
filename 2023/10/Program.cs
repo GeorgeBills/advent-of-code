@@ -1,4 +1,4 @@
-﻿const string file = "in.txt";
+const string file = "in.txt";
 
 var tiles = ParseTiles(file);
 
@@ -69,30 +69,29 @@ static int?[,] Search(Tile[,] tiles, (int row, int col) start)
 
     var depths = new int?[height, width];
 
-    var frontier = new PriorityQueue<(int row, int col), int>(); // TODO: we're doing breadth first so this could be a plain queue
+    var frontier = new Queue<((int row, int col) pos, int depth)>();
     var seen = new HashSet<(int row, int col)>();
-    frontier.Enqueue(start, 0);
+    frontier.Enqueue((start, 0));
 
-    while (frontier.TryDequeue(out (int, int) next, out int depth))
+    while (frontier.TryDequeue(out ((int, int), int) next))
     {
-        seen.Add(next);
+        var (pos, depth) = next;
 
-        var (row, col) = next;
+        seen.Add(pos);
+
+        var (row, col) = pos;
 
         depths[row, col] = depth;
 
         var tile = tiles[row, col];
 
-        var neighbours = ConnectedNeighbours(next, tiles);
-#if DEBUG
-        Console.WriteLine($"{next}: neighbours are {string.Join(", ", neighbours)}");
-#endif
+        var neighbours = ConnectedNeighbours(pos, tiles);
 
         foreach (var neighbour in neighbours)
         {
             if (!seen.Contains(neighbour))
             {
-                frontier.Enqueue(neighbour, depth + 1);
+                frontier.Enqueue((neighbour, depth + 1));
             }
         }
     }
