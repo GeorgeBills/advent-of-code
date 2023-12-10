@@ -157,8 +157,8 @@ static char DepthChar(int? depth) => depth switch
 {
     null => '.',
     >= 0 and <= 9 => (char)('0' + depth),
-    >= 10 and <= 35 => (char)('a' + depth),
-    >= 36 and <= 59 => (char)('A' + depth),
+    >= 10 and <= 35 => (char)('a' + depth - 10),
+    >= 36 and <= 61 => (char)('A' + depth - 36),
     _ => '!',
 };
 
