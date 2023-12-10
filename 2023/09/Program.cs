@@ -4,7 +4,7 @@ string file = args.Length >= 1 ? args[0] : "eg.txt";
 
 var histories =
     File.ReadLines(file)
-    .Select(line => Regex.Matches(line, @"\d+"))
+    .Select(line => Regex.Matches(line, @"-?\d+"))
     .Select(matches => matches.Select(m => m.Value).Select(int.Parse).ToArray())
     .ToArray();
 
