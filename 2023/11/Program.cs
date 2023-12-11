@@ -22,7 +22,7 @@ PrintDepths(galaxies, depths);
 
 var pairs = Pairs(galaxies);
 
-int total = 0;
+long total = 0;
 foreach (var pair in pairs)
 {
     var ((aidx, _), (bidx, (brow, bcol))) = pair;
@@ -97,6 +97,7 @@ static int[][,] CalculateDepths(char[,] image, (int Row, int Column)[] galaxies,
     for (int g = 0; g < depths.Length; g++)
     {
         const int unexplored = int.MaxValue;
+        const int expandedcost = 1_000_000; // "make each empty row or column one million times larger"
 
 #if DEBUG
         Console.WriteLine($"calculating depth for galaxy {g + 1} @ {galaxies[g]}");
@@ -129,7 +130,7 @@ static int[][,] CalculateDepths(char[,] image, (int Row, int Column)[] galaxies,
             foreach (var neighbour in neighbours)
             {
                 var (nrow, ncol) = neighbour;
-                int cost = expanded[nrow, ncol] ? 2 : 1;
+                int cost = expanded[nrow, ncol] ? expandedcost : 1;
                 frontier.Enqueue(neighbour, depth + cost);
             }
         }
