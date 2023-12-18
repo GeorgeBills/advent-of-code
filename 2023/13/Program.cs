@@ -5,34 +5,30 @@ const char rock = '#';
 
 var grids = ParsePatternGrids(file);
 int score = grids.Select(ReflectionSummary).Sum();
-Console.WriteLine(score);
+Console.WriteLine($"parsed {grids.Count()} pattern grids for a total score of {score}");
 
-static int? FindHorizontalReflection(char[,] grid)
+static IEnumerable<int> FindHorizontalReflections(char[,] grid)
 {
     int height = grid.GetLength(0);
     for (int i = 0; i < height - 1; i++)
     {
-        // Console.WriteLine($"is horizontal? {(i, i + 1)}");
         if (IsHorizontalReflection(grid, i, i + 1))
         {
-            return i;
+            yield return i;
         }
     }
-    return null;
 }
 
-static int? FindVerticalReflection(char[,] grid)
+static IEnumerable<int> FindVerticalReflections(char[,] grid)
 {
     int width = grid.GetLength(1);
     for (int i = 0; i < width - 1; i++)
     {
-        // Console.WriteLine($"is vertical? {(i, i + 1)}");
         if (IsVerticalReflection(grid, i, i + 1))
         {
-            return i;
+            yield return i;
         }
     }
-    return null;
 }
 
 static bool IsHorizontalReflection(char[,] grid, int i, int j) =>
@@ -47,9 +43,9 @@ static bool IsVerticalReflection(char[,] grid, int i, int j) =>
          (j >= grid.GetLength(1) - 1) /* the jth column is the last column */ ||
          IsVerticalReflection(grid, i - 1, j + 1));
 
-static IEnumerable<int> RowIndexes(char[,] grid) => Enumerable.Range(0, grid.GetLength(0) - 1);
+static IEnumerable<int> RowIndexes(char[,] grid) => Enumerable.Range(0, grid.GetLength(0));
 
-static IEnumerable<int> ColumnIndexes(char[,] grid) => Enumerable.Range(0, grid.GetLength(1) - 1);
+static IEnumerable<int> ColumnIndexes(char[,] grid) => Enumerable.Range(0, grid.GetLength(1));
 
 static IEnumerable<char> Row(char[,] grid, int row)
 {
@@ -78,36 +74,31 @@ static char[][,] ParsePatternGrids(string file)
     {
         char[,] grid;
         (grid, input) = ParsePatternGrid(input);
-
-// #if DEBUG
-//         PrintPatternGrid(grid);
-//         Console.WriteLine();
-// #endif
-
         grids.Add(grid);
     }
 
     return grids.ToArray();
-}
-static (char[,], IEnumerable<string>) ParsePatternGrid(IEnumerable<string> input)
-{
-    var lines = input.TakeWhile(l => l.Length > 0).ToArray();
 
-    int height = lines.Length;
-    int width = lines.Select(l => l.Length).Distinct().Single();
-
-    var grid = new char[height, width];
-    for (int row = 0; row < height; row++)
+    static (char[,], IEnumerable<string>) ParsePatternGrid(IEnumerable<string> input)
     {
-        for (int col = 0; col < width; col++)
+        var lines = input.TakeWhile(l => l.Length > 0).ToArray();
+
+        int height = lines.Length;
+        int width = lines.Select(l => l.Length).Distinct().Single();
+
+        var grid = new char[height, width];
+        for (int row = 0; row < height; row++)
         {
-            grid[row, col] = lines[row][col];
+            for (int col = 0; col < width; col++)
+            {
+                grid[row, col] = lines[row][col];
+            }
         }
+
+        input = input.Skip(height).SkipWhile(l => l.Length == 0);
+
+        return (grid, input);
     }
-
-    input = input.Skip(height).SkipWhile(l => l.Length == 0);
-
-    return (grid, input);
 }
 
 static void PrintPatternGrid(char[,] grid)
@@ -126,22 +117,21 @@ static void PrintPatternGrid(char[,] grid)
 static int ReflectionSummary(char[,] grid)
 {
     int score = 0;
-
-    int? khor = FindHorizontalReflection(grid);
-    if (khor != null)
+    foreach (int ihor in FindHorizontalReflections(grid))
     {
+#if DEBUG
+        Console.WriteLine($"pattern reflects horizontally on {ihor}:{ihor + 1}");
+#endif
         // "100 multiplied by the number of rows above each horizontal line of reflection"
-        score += 100 * ((int)khor + 1);
-        // Console.WriteLine($"pattern reflects horizontally on {khor}:{khor + 1} for a score of {score}");
+        score += 100 * (ihor + 1);
     }
-
-    int? kver = FindVerticalReflection(grid);
-    if (kver != null)
+    foreach (int kver in FindVerticalReflections(grid))
     {
+#if DEBUG
+        Console.WriteLine($"pattern reflects vertically on {kver}:{kver + 1}");
+#endif
         // "number of columns to the left of each vertical line of reflection"
-        score += (int)kver + 1;
-        // Console.WriteLine($"pattern reflects vertically on {kver}:{kver + 1} for a score of {score}");
+        score += kver + 1;
     }
-
     return score;
 }
