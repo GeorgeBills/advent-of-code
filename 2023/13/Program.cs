@@ -12,7 +12,8 @@ static IEnumerable<int> FindHorizontalReflections(char[,] grid)
     int height = grid.GetLength(0);
     for (int i = 0; i < height - 1; i++)
     {
-        if (IsHorizontalReflection(grid, i, i + 1))
+        int d = NumHorizontalReflectionDiffs(grid, i, i + 1);
+        if (d == 1)
         {
             yield return i;
         }
@@ -24,24 +25,61 @@ static IEnumerable<int> FindVerticalReflections(char[,] grid)
     int width = grid.GetLength(1);
     for (int i = 0; i < width - 1; i++)
     {
-        if (IsVerticalReflection(grid, i, i + 1))
+        int d = NumVerticalReflectionDiffs(grid, i, i + 1);
+        if (d == 1)
         {
             yield return i;
         }
     }
 }
 
-static bool IsHorizontalReflection(char[,] grid, int i, int j) =>
-        Enumerable.SequenceEqual(Row(grid, i), Row(grid, j)) &&
-        ((i < 1) /* the ith row is the first row */ ||
-         (j >= grid.GetLength(0) - 1) /* the jth row is the last row */ ||
-         IsHorizontalReflection(grid, i - 1, j + 1));
+static int SequenceDifferences(IEnumerable<char> first, IEnumerable<char> second)
+{
+    if (first.Count() != second.Count())
+    {
+        throw new Exception("expecting equal length sequences");
+    }
 
-static bool IsVerticalReflection(char[,] grid, int i, int j) =>
-        Enumerable.SequenceEqual(Column(grid, i), Column(grid, j)) &&
-        ((i < 1) /* the ith column is the first column */ ||
-         (j >= grid.GetLength(1) - 1) /* the jth column is the last column */ ||
-         IsVerticalReflection(grid, i - 1, j + 1));
+    return Enumerable.Zip(first, second).Count(chch => chch.First != chch.Second);
+}
+
+const int tolerance = 1;
+
+static int NumHorizontalReflectionDiffs(char[,] grid, int i, int j, int diff = 0)
+{
+    diff += SequenceDifferences(Row(grid, i), Row(grid, j));
+
+    if (diff > tolerance)
+    {
+        return int.MaxValue;
+    }
+
+    if ((i < 1) /* the ith row is the first row */ ||
+        (j >= grid.GetLength(0) - 1) /* the jth row is the last row */)
+    {
+        return diff;
+    }
+
+    return NumHorizontalReflectionDiffs(grid, i - 1, j + 1, diff);
+}
+
+static int NumVerticalReflectionDiffs(char[,] grid, int i, int j, int diff = 0)
+{
+    diff += SequenceDifferences(Column(grid, i), Column(grid, j));
+
+    if (diff > tolerance)
+    {
+        return int.MaxValue;
+    }
+
+    if ((i < 1) /* the ith column is the first column */ ||
+        (j >= grid.GetLength(1) - 1) /* the jth column is the last column */)
+    {
+        return diff;
+    }
+
+    return NumVerticalReflectionDiffs(grid, i - 1, j + 1, diff);
+}
 
 static IEnumerable<int> RowIndexes(char[,] grid) => Enumerable.Range(0, grid.GetLength(0));
 
