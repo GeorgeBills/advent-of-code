@@ -4,8 +4,24 @@ using System.Data;
 const string file = "in.txt";
 
 var contraption = ParseContraption(file);
-int energised = Simulate(contraption);
-Console.WriteLine(energised);
+
+var (height, width) = (contraption.GetLength(0), contraption.GetLength(1));
+
+var rows = Enumerable.Range(0, height);
+var columns = Enumerable.Range(0, height);
+
+var top = columns.Select(col => new Position(0, col)).Select(p => new Beam(Direction.S, p));
+var bottom = columns.Select(col => new Position(height - 1, col)).Select(p => new Beam(Direction.N, p));
+var left = rows.Select(row => new Position(row, 0)).Select(p => new Beam(Direction.E, p));
+var right = rows.Select(row => new Position(row, width - 1)).Select(p => new Beam(Direction.W, p));
+
+var starts = Enumerable.Empty<Beam>().Concat(top).Concat(bottom).Concat(left).Concat(right);
+
+var max = starts
+    .Select(b => (Beam: b, Energised: Simulate(contraption, b)))
+    .MaxBy(be => be.Energised);
+
+Console.WriteLine(max);
 
 static void PrintEnergised(char[,] contraption, IEnumerable<Beam> energised)
 {
@@ -39,11 +55,9 @@ static char[,] ParseContraption(string file)
     return contraption;
 }
 
-static int Simulate(char[,] contraption)
+static int Simulate(char[,] contraption, Beam start)
 {
     var (height, width) = (contraption.GetLength(0), contraption.GetLength(1));
-
-    var start = new Beam(Direction.E, new Position(0, 0));
 
     var beams = new Queue<Beam>();
     beams.Enqueue(start);
@@ -52,10 +66,10 @@ static int Simulate(char[,] contraption)
 
     while (beams.TryDequeue(out var beam))
     {
-#if DEBUG
-        Console.WriteLine(beam);
-        PrintEnergised(contraption, energised);
-#endif
+        // #if DEBUG
+        //         Console.WriteLine(beam);
+        //         PrintEnergised(contraption, energised);
+        // #endif
 
         char square = contraption[beam.Position.Row, beam.Position.Column];
         var next = beam.Next(square);
