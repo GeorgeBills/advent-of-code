@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
+using System.Text;
 
-const string file = "eg.txt";
+const string file = "in.txt";
 
 const char rounded = 'O';
 const char cubical = '#';
@@ -42,7 +43,8 @@ Console.WriteLine();
 
 const int iterations = 1_000_000_000;
 var sw = Stopwatch.StartNew();
-var seen = new HashSet<char[,]>();
+var seen = new Dictionary<string, int>();
+bool skipped = false;
 for (int i = 0; i < iterations; i++)
 {
 #if DEBUG
@@ -59,14 +61,22 @@ for (int i = 0; i < iterations; i++)
 #endif
     }
 
-    if (seen.Contains(platform))
+    if (!skipped)
     {
-        // FIXME: need a dictionary(?) of state to weight
-        //        state we repeat on will not be the state we terminate on
-        Console.WriteLine($"exiting early: repeat observed after iteration {i + 1} ({sw.Elapsed})");
-        break;
+        string platstr = PlatformString(platform);
+        if (seen.TryGetValue(platstr, out int last))
+        {
+            int cycle = i - last;
+            int remaining = iterations - i;
+            int skip = remaining / cycle * cycle;
+            int newi = i + skip;
+
+            Console.WriteLine($"repeating iteration {last + 1} at iteration {i + 1}; cycle of length {cycle}; skipping ahead {skip} to {newi}");
+            i = newi;
+            skipped = true;
+        }
+        seen[platstr] = i;
     }
-    seen.Add(platform);
 }
 
 int weight = RoundedRocks(platform)
@@ -151,16 +161,20 @@ static char[,] ParsePlatform(string file)
 }
 
 #if DEBUG
-static void PrintPlatform(char[,] platform)
+static void PrintPlatform(char[,] platform) => Console.Write(PlatformString(platform));
+#endif
+
+static string PlatformString(char[,] platform)
 {
     var (height, width) = (platform.GetLength(0), platform.GetLength(1));
+    var sb = new StringBuilder();
     for (int row = 0; row < height; row++)
     {
         for (int col = 0; col < width; col++)
         {
-            Console.Write(platform[row, col]);
+            sb.Append(platform[row, col]);
         }
-        Console.WriteLine();
+        sb.AppendLine();
     }
+    return sb.ToString();
 }
-#endif
