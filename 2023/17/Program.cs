@@ -1,4 +1,4 @@
-﻿const string file = "eg.txt";
+﻿const string file = "in.txt";
 
 var map = ParseMap(file);
 
@@ -14,34 +14,60 @@ var endpos = new Position(height - 1, width - 1); // "the bottom-right city bloc
 
 var starteast = new Node(startpos, Direction.E);
 var startsouth = new Node(startpos, Direction.S);
-int startcost = EstimateCost(startpos, endpos);
 
-var seen = new HashSet<Node>();
+var costs = new Dictionary<Node, int> {
+    { starteast, 0 },
+    { startsouth, 0},
+};
+
+var previouses = new Dictionary<Node, Node>();
 
 var frontier = new PriorityQueue<Node, int>();
+int startcost = EstimateCost(startpos, endpos);
 frontier.Enqueue(starteast, startcost);
 frontier.Enqueue(startsouth, startcost);
 
 while (frontier.TryDequeue(out Node current, out int _))
 {
+#if DEBUG
     Console.WriteLine($"{current} {frontier.Count}");
-
-    if (!seen.Add(current))
-    {
-        continue; // already expanded
-    }
+#endif
 
     if (current.Position == endpos)
     {
-        Console.WriteLine($"found end position");
+        int cost = costs[current];
+
+        var path = new List<Node> { current };
+        while (previouses.TryGetValue(current, out Node prev))
+        {
+            current = prev;
+            path.Add(prev);
+        }
+#if DEBUG
+        Console.WriteLine(string.Join(',', path));
+#endif
+
+        Console.WriteLine($"found end position with cost {cost} and total path length {path.Count}");
+
         break;
     }
 
     var expanded = Expand(current, height - 1, width - 1);
     foreach (var node in expanded)
     {
-        int estcost = EstimateCost(node.Position, endpos);
-        frontier.Enqueue(node, estcost);
+        int costg = costs[current] + map[node.Position.Row, node.Position.Column];
+
+        if (!costs.TryGetValue(node, out int costgprev) /* haven't evaluated this neighbour previously */ ||
+            costgprev > costg                           /* previous evaluation was more expensive */)
+        {
+            // record best known path to neighbour
+            previouses[node] = current;
+            costs[node] = costg;
+
+            // enqueue neighbour to expand
+            int costh = EstimateCost(node.Position, endpos);
+            frontier.Enqueue(node, costg + costh /* actual plus estimate */);
+        }
     }
 }
 
@@ -86,8 +112,7 @@ static IEnumerable<Node> Expand(Node node, int maxRow, int maxColumn)
 
 static int EstimateCost(Position from, Position to) => ManhattanDistance(from, to) * minHeat;
 
-static int ManhattanDistance(Position from, Position to) =>
-    Math.Abs(to.Row - from.Row) + Math.Abs(to.Column - from.Column);
+static int ManhattanDistance(Position from, Position to) => Math.Abs(to.Row - from.Row) + Math.Abs(to.Column - from.Column);
 
 static int[,] ParseMap(string file)
 {
