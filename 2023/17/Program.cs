@@ -5,7 +5,8 @@ var map = ParseMap(file);
 PrintMap(map);
 
 const int minHeat = 1;
-const int maxConsecutive = 3;
+const int maxConsecutiveBeforeTurning = 10;
+const int minConsecutiveBeforeTurning = 4;
 
 var (height, width) = (map.GetLength(0), map.GetLength(1));
 
@@ -33,7 +34,8 @@ while (frontier.TryDequeue(out Node current, out int _))
     Console.WriteLine($"{current} {frontier.Count}");
 #endif
 
-    if (current.Position == endpos)
+    if (current.Position == endpos &&
+        current.Consecutive > minConsecutiveBeforeTurning /* "or even before it can stop at the end" !!! */ )
     {
         int cost = costs[current];
 
@@ -44,7 +46,7 @@ while (frontier.TryDequeue(out Node current, out int _))
             path.Add(prev);
         }
 #if DEBUG
-        Console.WriteLine(string.Join(',', path));
+        PrintPath(path, map);
 #endif
 
         Console.WriteLine($"found end position with cost {cost} and total path length {path.Count}");
@@ -71,6 +73,26 @@ while (frontier.TryDequeue(out Node current, out int _))
     }
 }
 
+static void PrintPath(IEnumerable<Node> path, int[,] map)
+{
+    var dirs = path.ToDictionary(n => n.Position, n => n.Direction);
+    var (height, width) = (map.GetLength(0), map.GetLength(1));
+    for (int row = 0; row < height; row++)
+    {
+        for (int col = 0; col < width; col++)
+        {
+            var pos = new Position(row, col);
+
+            char c = dirs.TryGetValue(pos, out Direction dir)
+                ? dir switch { Direction.N => '^', Direction.S => 'v', Direction.E => '>', Direction.W => '<' }
+                : (char)(map[row, col] + '0');
+
+            Console.Write(c);
+        }
+        Console.WriteLine();
+    }
+}
+
 static IEnumerable<(Direction Direction, Position Position)> CardinalNeighbours(Position position, int maxRow, int maxColumn)
 {
     if (position.Row > 0) { yield return (Direction.N, position with { Row = position.Row - 1 }); }
@@ -91,10 +113,16 @@ static IEnumerable<Node> Expand(Node node, int maxRow, int maxColumn)
 {
     var neighbours = CardinalNeighbours(node.Position, maxRow, maxColumn);
 
-    // "can move at most three blocks in a single direction"
-    if (node.Consecutive >= maxConsecutive)
+    // "a maximum of ten consecutive blocks without turning"
+    if (node.Consecutive >= maxConsecutiveBeforeTurning)
     {
         neighbours = neighbours.Where(n => n.Direction != node.Direction);
+    }
+
+    // "needs to move a minimum of four blocks in that direction before it can turn"
+    if (node.Consecutive < minConsecutiveBeforeTurning)
+    {
+        neighbours = neighbours.Where(n => n.Direction == node.Direction);
     }
 
     // "can't reverse direction"
