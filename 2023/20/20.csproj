@@ -6,6 +6,7 @@
     <RootNamespace>_20</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <NoWarn>8509;8524</NoWarn>
   </PropertyGroup>
 
 </Project>
