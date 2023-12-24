@@ -5,6 +5,7 @@ const string file = "in.txt";
 const string broadcaster = "broadcaster";
 const string output = "output";
 const string rx = "rx";
+const string jz = "jz"; // probably specific to my input...
 
 var queue = new Queue<Pulse>(); // "always processed in the order they are sent"
 
@@ -23,6 +24,16 @@ foreach (var m in modules.Values)
         }
     }
 }
+
+// dictionary of inputs to jz to the iteration when we received a high pulse
+// (for my input!) a, b, c, d => jz => rx
+// so rx will receive a high pulse when all four of a, b, c, d receive high pulses
+// this dictionary tracks when each of a, b, c, d have received a high pulse
+// then we can find the lowest common multiple of a, b, c, d...
+// ...and that least common multiple will be when all of a, b, c, d simultaneously receive a high pulse
+// this assumes that the cycle repeats from 0..n which probably isn't generally true
+// (but it is for my input)
+var jzin = ((Conjunction)modules[jz]).received.Keys.ToDictionary(n => n, _ => int.MinValue);
 
 var sent = new Dictionary<PulseType, int>();
 for (int i = 0; ; i++)
@@ -55,6 +66,16 @@ for (int i = 0; ; i++)
                 }
                 continue;
             default:
+                if (pulse.To == jz && pulse.Type == PulseType.High)
+                {
+                    Console.WriteLine($"{jz} got {pulse.Type} from {pulse.From} on {i}th iteration");
+
+                    jzin[pulse.From] = i;
+                    if (jzin.Values.All(i => i > 0))
+                    {
+                        goto DONE;
+                    }
+                }
                 var module = modules[pulse.To];
                 module.HandlePulse(pulse);
                 break;
@@ -67,9 +88,24 @@ for (int i = 0; ; i++)
 }
 
 DONE:
-int low = sent[PulseType.Low];
-int high = sent[PulseType.High];
-Console.WriteLine($"saw {low} low and {high} high for an answer of {low * high}");
+long rxhigh = jzin.Values.Select(n => n + 1).Aggregate(1L, (a, b) => LowestCommonMultiple(a, b));
+Console.WriteLine($"{rx} will receive a {PulseType.High} pulse after {rxhigh} iterations");
+// int low = sent[PulseType.Low];
+// int high = sent[PulseType.High];
+// Console.WriteLine($"saw {low} low and {high} high for an answer of {low * high}");
+
+static long LowestCommonMultiple(long a, long b) => a * b / GreatestCommonDivisor(a, b);
+
+static long GreatestCommonDivisor(long a, long b)
+{
+    while (b != 0)
+    {
+        var t = b;
+        b = a % b;
+        a = t;
+    }
+    return a;
+}
 
 static Module ParseModule(Queue<Pulse> queue, string modulestr)
 {
@@ -187,7 +223,7 @@ class Conjunction : Module
 
     // "remember the type of the most recent pulse received from each of their
     //  connected input modules"
-    private readonly IDictionary<string, PulseType> received;
+    public readonly IDictionary<string, PulseType> received;
 
     public Conjunction(Queue<Pulse> queue,
                        string name,
