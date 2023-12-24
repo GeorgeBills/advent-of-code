@@ -9,28 +9,28 @@ var queue = new Queue<Pulse>(); // "always processed in the order they are sent"
 
 var modules = File.ReadLines(file).Select(l => ParseModule(queue, l)).ToDictionary(m => m.Name, m => m);
 
-// GROSS HACK: init the incoming connections for all of our conjunction modules
-//             "they initially default to remembering a low pulse for each input"
-//             otherwise if the first pulse is high then all pulses seen so far are high
+// "register" the connections so that conjunction modules function properly
+// "they initially default to remembering a low pulse for each input"
+// otherwise if the first pulse is high then all pulses seen so far are high
 foreach (var m in modules.Values)
 {
     foreach (var d in m.Destinations)
     {
-        if (d == output) { continue; }
-
         if (modules.TryGetValue(d, out var n) && n is Conjunction)
         {
-            var pulse = new Pulse(m.Name, n.Name, PulseType.Low);
-            m.HandlePulse(pulse);
+            m.ConnectTo(n);
         }
     }
 }
-queue.Clear(); // drain our "initialisation" pulses
 
 const int numPushes = 1000;
 var sent = new Dictionary<PulseType, int>();
 for (int i = 0; i < numPushes; i++)
 {
+#if DEBUG
+    Console.WriteLine(i + 1);
+#endif
+
     var initial = new Pulse(null, broadcaster, PulseType.Low);
     queue.Enqueue(initial);
 
@@ -44,7 +44,7 @@ for (int i = 0; i < numPushes; i++)
 
         if (!modules.TryGetValue(pulse.To, out var module))
         {
-            Console.WriteLine($"unmatched module {pulse.To}: {pulse.Type}");
+            Console.WriteLine($"unmatched module '{pulse.To}': {pulse.Type}");
             continue;
         }
 
@@ -88,7 +88,7 @@ enum ModuleType { Broadcast, FlipFlop, Conjunction }
 
 record Pulse(string? From, string To, PulseType Type)
 {
-    public override string ToString() => $"{From} -{Type}-> {To}";
+    public override string ToString() => $"{From ?? "button"} -{Type.ToString().ToLower()}-> {To}";
 }
 
 abstract class Module
@@ -116,6 +116,10 @@ abstract class Module
     }
 
     public abstract void HandlePulse(Pulse transmission);
+
+    public virtual void ConnectTo(Module m) => m.ConnectFrom(this);
+
+    protected virtual void ConnectFrom(Module module) { /* do nothing */ }
 }
 
 class Broadcast : Module
@@ -167,7 +171,7 @@ class FlipFlop : Module
 
 class Conjunction : Module
 {
-    private PulseType defaultType = PulseType.Low;
+    private const PulseType defaultPulseType = PulseType.Low;
 
     // "remember the type of the most recent pulse received from each of their
     //  connected input modules"
@@ -192,4 +196,6 @@ class Conjunction : Module
 
         SendPulse(type);
     }
+
+    protected override void ConnectFrom(Module m) => received[m.Name] = defaultPulseType;
 }
