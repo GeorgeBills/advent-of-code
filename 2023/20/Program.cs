@@ -4,6 +4,7 @@ const string file = "in.txt";
 
 const string broadcaster = "broadcaster";
 const string output = "output";
+const string rx = "rx";
 
 var queue = new Queue<Pulse>(); // "always processed in the order they are sent"
 
@@ -23,9 +24,8 @@ foreach (var m in modules.Values)
     }
 }
 
-const int numPushes = 1000;
 var sent = new Dictionary<PulseType, int>();
-for (int i = 0; i < numPushes; i++)
+for (int i = 0; ; i++)
 {
 #if DEBUG
     Console.WriteLine(i + 1);
@@ -42,19 +42,31 @@ for (int i = 0; i < numPushes; i++)
 
         sent[pulse.Type] = sent.GetValueOrDefault(pulse.Type, 0) + 1;
 
-        if (!modules.TryGetValue(pulse.To, out var module))
+        switch (pulse.To)
         {
-            Console.WriteLine($"unmatched module '{pulse.To}': {pulse.Type}");
-            continue;
+            case output:
+                Console.WriteLine($"output: {pulse.Type}");
+                continue;
+            case rx:
+                if (pulse.Type == PulseType.Low)
+                {
+                    Console.WriteLine($"low pulse sent to {rx} after {i + 1} button presses");
+                    goto DONE;
+                }
+                continue;
+            default:
+                var module = modules[pulse.To];
+                module.HandlePulse(pulse);
+                break;
         }
 
-        modules[pulse.To].HandlePulse(pulse);
     }
 #if DEBUG
     Console.WriteLine();
 #endif
 }
 
+DONE:
 int low = sent[PulseType.Low];
 int high = sent[PulseType.High];
 Console.WriteLine($"saw {low} low and {high} high for an answer of {low * high}");
