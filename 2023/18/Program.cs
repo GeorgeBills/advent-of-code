@@ -1,4 +1,5 @@
-﻿using System.Text.RegularExpressions;
+﻿using System.Drawing;
+using System.Text.RegularExpressions;
 
 using RGB = (byte R, byte G, byte B);
 using Point = (int X, int Y);
@@ -8,34 +9,85 @@ using Edge = ((int X, int Y) A, (int X, int Y) B);
 const string file = "eg.txt";
 
 var plan = File.ReadLines(file).Select(ParseDigPlanInstruction);
-Console.WriteLine($"{plan.Count()} instructions");
+var edges = TrenchEdges(plan).Select(e => e.Edge);
 
-var points = TrenchPoints(plan).ToArray();
+var p = edges.SelectMany(e => new[] { e.A, e.B }).ToHashSet();
+for (int i = 5; i > -15; i--)
+{
+    for (int j = -5; j < 15; j++)
+    {
+        Console.Write(p.Contains((j, i)) ? '#' : '.');
+    }
+    Console.WriteLine();
+}
 
-var min = points.Aggregate((X: int.MaxValue, Y: int.MaxValue), (acc, v) => (Math.Min(acc.X, v.X), Math.Min(acc.Y, v.Y)));
-var translate = Scale(min, -1);
+// shoelace formula: areas of triangles defined by points (0,0), A, B
+var areas = edges.Select(e => e.A.X * e.B.Y - e.B.X * e.A.Y);
+Console.WriteLine(string.Join(',', Enumerable.Zip(edges, areas)));
 
-var pointst = points.Select(p => TranslatePoint(p, translate)).ToArray(); // translate so all points are >= (0,0)
-Console.WriteLine($"{pointst.Length} points: {string.Join(',', pointst.Take(15))}{(pointst.Length > 15 ? "..." : "")}");
+// #if WINDOWS
+var points = edges.SelectMany(e => new[] { e.A, e.B });
+var bb = BoundingBox(points);
 
-var edges = TrenchEdges(plan).ToArray();
-var edgest = edges.Select(e => (Edge: TranslateEdge(e.Edge, translate), e.Colour)).ToArray(); // translate so all points are >= (0,0)
-Console.WriteLine($"{edgest.Length} edges: {string.Join(',', edgest.Select(e => e.Edge))}");
+var translate = ScaleVector(bb.Min, -1);
+var scale = 100;
 
-var x = edgest.GroupBy(e => CategoriseOrientation(e.Edge), e => e.Edge).ToDictionary(g => g.Key, g => g);
-var h = x[Orientation.Horizontal].Order().ToArray();
-var v = x[Orientation.Vertical].OrderBy(e => e.A.Y).ThenBy(e => e.B.Y).ThenBy(e => e.A.X).ToArray();
+var edgestransformed = edges.Select(e => TranslateEdge(e, translate)).Select(e => ScaleEdge(e, scale)).ToArray();
 
-Console.WriteLine(string.Join(',', v));
+var bbtransformed = (Min: TranslatePoint(bb.Min, translate), Max: TranslatePoint(bb.Max, translate));
+var drawpoints = edgestransformed.Select(e => new System.Drawing.Point[] { new(0, 0), new(e.A.X, e.A.Y), new(e.B.X, e.B.Y) });
 
-Console.WriteLine(IsRectangleEdges(v[0], v[1]));
-Console.WriteLine(IsRectangleEdges(v[2], v[3]));
-Console.WriteLine(IsRectangleEdges(v[4], v[5]));
+var cols = new[] {
+    Pens.Red,
+    Pens.Blue,
+    Pens.Yellow,
+    Pens.Green,
+    Pens.Orange,
+    Pens.Purple,
+    Pens.Pink,
+    Pens.Brown,
+    Pens.Black,
+    Pens.White,
+    Pens.Gray,
+    Pens.Beige,
+    Pens.Turquoise,
+    Pens.Cyan,
+};
 
-// https://en.wikipedia.org/wiki/Rectilinear_polygon
-// https://en.wikipedia.org/wiki/Polygon_partition#Partitioning_a_rectilinear_polygon_into_rectangles
+int pen = 0;
 
-static Vector Scale(Vector v, int scale) => (v.X * scale, v.Y * scale);
+// TODO: use SkiaSharp!
+// TODO: draw the triangles as transparent polys
+using (var bitmap = new Bitmap(bbtransformed.Max.X * scale + 1, bbtransformed.Max.Y * scale + 1))
+using (var graphics = Graphics.FromImage(bitmap))
+{
+    graphics.Clear(Color.Black);
+    foreach (var dp in drawpoints)
+    {
+        graphics.DrawLine(cols[pen++], dp[1], dp[2]); // TODO: use the defined colour!
+        // graphics.FillPolygon(Brushes.Blue, dp, );
+        // graphics.DrawPolygon(cols[pen++ % cols.Length], dp);
+    }
+    bitmap.Save("tmp.png");
+}
+// #endif
+
+double area = Math.Abs(areas.Sum()) / 2.0;
+Console.WriteLine(area);
+
+static (Point Min, Point Max) BoundingBox(IEnumerable<Point> points) => points.Aggregate(
+    (Min: (X: int.MaxValue, Y: int.MaxValue), Max: (X: int.MinValue, Y: int.MinValue)),
+    (bb, p) => (
+        (Math.Min(bb.Min.X, p.X), Math.Min(bb.Min.Y, p.Y)),
+        (Math.Max(bb.Max.X, p.X), Math.Max(bb.Max.Y, p.Y))
+    )
+);
+
+static Edge ScaleEdge(Edge e, int scale) => (ScalePoint(e.A, scale), ScalePoint(e.B, scale));
+
+static Point ScalePoint(Point p, int scale) => (p.X * scale, p.Y * scale);
+
+static Vector ScaleVector(Vector v, int scale) => (v.X * scale, v.Y * scale);
 
 static Point TranslatePoint(Point p, Vector v) => (p.X + v.X, p.Y + v.Y);
 
@@ -87,7 +139,7 @@ static (Direction Direction, int Distance, (byte R, byte G, byte B) RGB) ParseDi
 
 static IEnumerable<(Edge Edge, RGB Colour)> TrenchEdges(IEnumerable<(Direction, int, RGB)> plan)
 {
-    var a = (X: 0, Y: 0);
+    var a = (X: 0, Y: 0); // arbitrary starting point
     foreach (var instruction in plan)
     {
         var (direction, distance, colour) = instruction;
@@ -100,24 +152,7 @@ static IEnumerable<(Edge Edge, RGB Colour)> TrenchEdges(IEnumerable<(Direction, 
         };
         var ab = (((a.X, a.Y), (b.X, b.Y)), colour);
         yield return ab;
-        a = b;
-    }
-}
-
-static IEnumerable<Point> TrenchPoints(IEnumerable<(Direction, int, RGB)> plan)
-{
-    var current = (X: 0, Y: 0);
-    foreach (var instruction in plan)
-    {
-        var (direction, distance, _) = instruction;
-        current = direction switch
-        {
-            Direction.L => (current.X - distance, current.Y),
-            Direction.R => (current.X + distance, current.Y),
-            Direction.U => (current.X, current.Y + distance),
-            Direction.D => (current.X, current.Y - distance),
-        };
-        yield return current;
+        a = b; // last point of this edge is the first point for the next edge
     }
 }
 
