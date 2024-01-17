@@ -1,4 +1,7 @@
 {
 	"name": "Haskell",
-	"image": "haskell:9.2"
+	"image": "mcr.microsoft.com/devcontainers/base:bullseye",
+	"features": {
+		"ghcr.io/devcontainers-contrib/features/haskell:2": {}
+	}
 }
